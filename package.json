@@ -1,5 +1,5 @@
 {
-  "name": "base128",
+  "name": "base128-ascii",
   "version": "0.0.1",
   "main": "dist/index.js",
   "type": "module",
