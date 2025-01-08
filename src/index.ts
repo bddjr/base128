@@ -22,25 +22,30 @@ export function encode(input: Uint8Array) {
         out[oi++] = Number((chunk >> 7n) & 127n)
         out[oi++] = Number(chunk & 127n)
     }
+
     if (suffixSize) out = out.slice(0, Math.ceil(suffixSize / 7 * 8) - 8)
-    return new TextDecoder().decode(out)
-}
-
-export function stringToTemplateLiterals(input: string) {
-    return '`' + input.replace(/[\r\\`]|\${|\0\d?/g, (match) =>
-        match[0] == '\0'
-            ? match.length == 2
-                ? '\\x00' + match[1]
-                : '\\0'
-            : match == '\r'
-                ? '\\r'
-                : '\\' + match
-
-    ) + '`'
-}
-
-export function encodeToTemplateLiterals(input: Uint8Array) {
-    return stringToTemplateLiterals(encode(input))
+    let str: string | undefined
+    let jstl: string | undefined
+    return {
+        uint8Array: out,
+        toString() {
+            return str ??= new TextDecoder().decode(out)
+        },
+        toJSTemplateLiterals() {
+            return jstl ??= '`' + (this.toString() as string).replace(/[\r\\`]|\${|\0\d?|<\/script/g, (match) => {
+                if (match == '\r')
+                    return '\\r'
+                if (match == '</script')
+                    return '<\\/script'
+                if (match[0] == '\0') {
+                    if (match.length == 2)
+                        return '\\x00' + match[1]
+                    return '\\0'
+                }
+                return '\\' + match
+            }) + '`'
+        }
+    }
 }
 
 export function decode(input: string) {
@@ -71,7 +76,6 @@ export function decode(input: string) {
 
 const base128 = {
     encode,
-    encodeToTemplateLiterals,
     decode
 }
 

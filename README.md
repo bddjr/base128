@@ -15,7 +15,7 @@ The first byte indicates the length of the last incomplete block, 0 means no inc
 `0LF3!Tl7`
 ```
 
-Test effect, Base128 is 10KB smaller than Base64:
+Test effect, Base128 is 102KiB smaller than Base64:
 
 ```
 screenshot-45.519.jpg

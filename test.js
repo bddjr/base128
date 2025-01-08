@@ -12,10 +12,10 @@ function test(name) {
     console.log('file length:', f.length)
     console.log()
 
-    console.log('encodeToTemplateLiterals:')
-    const euq = base128_ascii.encodeToTemplateLiterals(Uint8Array.from(f))
+    console.log('encode:')
+    const euq = base128_ascii.encode(Uint8Array.from(f)).toJSTemplateLiterals()
     // console.log(euq)
-    console.log('bytes length:', Buffer.from(euq).length)
+    console.log('bytes length:', euq.length)
     fs.writeFileSync(`test-output/${name}.js`, euq)
 
     const euqeval = eval(euq)
