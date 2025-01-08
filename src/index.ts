@@ -1,7 +1,5 @@
 export function encode(input: Uint8Array) {
-    let ii = 0, oi = 0,
-        str: string | undefined,
-        jstl: string | undefined;
+    let ii = 0, oi = 0, str: string, jstl: string;
     const out = new Uint8Array(Math.ceil(input.length / 7 * 8))
     while (ii < input.length) {
         //     0        1        2        3        4        5        6        7
@@ -24,7 +22,7 @@ export function encode(input: Uint8Array) {
             return str ??= new TextDecoder().decode(out)
         },
         toJSTemplateLiterals() {
-            return jstl ??= '`' + (this.toString() as string).replace(/[\r\\`]|\${|\0\d?|<\/script/g, (match) => {
+            return jstl ??= `\`${(this.toString() as string).replace(/[\r\\`]|\${|\0\d?|<\/script/g, (match) => {
                 if (match == '\r')
                     return '\\r'
                 if (match == '</script')
@@ -35,17 +33,15 @@ export function encode(input: Uint8Array) {
                     return '\\0'
                 }
                 return '\\' + match
-            }) + '`'
+            })}\``
         }
     }
 }
 
 export function decode(input: string) {
     let ii = 0, oi = 0, cache: number
-    const out = new Uint8Array(Math.floor(input.length / 8 * 7))
-    function update() {
-        return cache = input.charCodeAt(ii++) || 0
-    }
+    const update = () => cache = input.charCodeAt(ii++),
+        out = new Uint8Array(Math.floor(input.length / 8 * 7))
     while (ii < input.length) {
         //     0        1        2        3        4        5        6        7
         // in  _0000000 _1111111 _2222222 _3333333 _4444444 _5555555 _6666666 _7777777
