@@ -1,31 +1,23 @@
 export function encode(input: Uint8Array) {
-    let out = new Uint8Array(Math.ceil(input.length / 7) * 8 + 1)
+    let ii = 0, oi = 0,
+        str: string | undefined,
+        jstl: string | undefined;
+    const out = new Uint8Array(Math.ceil(input.length / 7 * 8))
+    while (ii < input.length) {
+        //     0        1        2        3        4        5        6        7
+        // in  00000000 11111111 22222222 33333333 44444444 55555555 66666666
+        // out _0000000 _0111111 _1122222 _2223333 _3333444 _4444455 _5555556 _6666666
 
-    const suffixSize = input.length % 7
-    out[0] = suffixSize + 48
-
-    for (let ii = 0, oi = 1; ii < input.length;) {
-        let chunk = BigInt(input[ii++] || 0) << 48n
-        chunk |= BigInt(input[ii++] || 0) << 40n
-        chunk |= BigInt(input[ii++] || 0) << 32n
-        chunk |= BigInt(input[ii++] || 0) << 24n
-        chunk |= BigInt(input[ii++] || 0) << 16n
-        chunk |= BigInt(input[ii++] || 0) << 8n
-        chunk |= BigInt(input[ii++] || 0)
-
-        out[oi++] = Number(chunk >> 49n)
-        out[oi++] = Number((chunk >> 42n) & 127n)
-        out[oi++] = Number((chunk >> 35n) & 127n)
-        out[oi++] = Number((chunk >> 28n) & 127n)
-        out[oi++] = Number((chunk >> 21n) & 127n)
-        out[oi++] = Number((chunk >> 14n) & 127n)
-        out[oi++] = Number((chunk >> 7n) & 127n)
-        out[oi++] = Number(chunk & 127n)
+        /* 0 */ out[oi++] = input[ii] >> 1
+        /* 1 */ out[oi++] = input[ii++] << 6 & 127 | input[ii] >> 2
+        /* 2 */ out[oi++] = input[ii++] << 5 & 127 | input[ii] >> 3
+        /* 3 */ out[oi++] = input[ii++] << 4 & 127 | input[ii] >> 4
+        /* 4 */ out[oi++] = input[ii++] << 3 & 127 | input[ii] >> 5
+        /* 5 */ out[oi++] = input[ii++] << 2 & 127 | input[ii] >> 6
+        /* 6 */ out[oi++] = input[ii++] << 1 & 127 | input[ii] >> 7
+        /* 7 */ out[oi++] = input[ii++] & 127
     }
 
-    if (suffixSize) out = out.slice(0, Math.ceil(suffixSize / 7 * 8) - 8)
-    let str: string | undefined
-    let jstl: string | undefined
     return {
         uint8Array: out,
         toString() {
@@ -49,28 +41,24 @@ export function encode(input: Uint8Array) {
 }
 
 export function decode(input: string) {
-    const u8a = new TextEncoder().encode(input)
-    const out = new Uint8Array(Math.ceil((u8a.length - 1) / 8) * 7)
-    for (let ii = 1, oi = 0; ii < u8a.length;) {
-        let chunk = BigInt(u8a[ii++] || 0) << 49n
-        chunk |= BigInt(u8a[ii++] || 0) << 42n
-        chunk |= BigInt(u8a[ii++] || 0) << 35n
-        chunk |= BigInt(u8a[ii++] || 0) << 28n
-        chunk |= BigInt(u8a[ii++] || 0) << 21n
-        chunk |= BigInt(u8a[ii++] || 0) << 14n
-        chunk |= BigInt(u8a[ii++] || 0) << 7n
-        chunk |= BigInt(u8a[ii++] || 0)
-
-        out[oi++] = Number(chunk >> 48n)
-        out[oi++] = Number((chunk >> 40n) & 255n)
-        out[oi++] = Number((chunk >> 32n) & 255n)
-        out[oi++] = Number((chunk >> 24n) & 255n)
-        out[oi++] = Number((chunk >> 16n) & 255n)
-        out[oi++] = Number((chunk >> 8n) & 255n)
-        out[oi++] = Number(chunk & 255n)
+    let ii = 0, oi = 0, cache: number
+    const out = new Uint8Array(Math.floor(input.length / 8 * 7))
+    function update() {
+        return cache = input.charCodeAt(ii++) || 0
     }
-    const suffixSize = u8a[0] - 48
-    if (suffixSize) return out.slice(0, suffixSize - 7)
+    while (ii < input.length) {
+        //     0        1        2        3        4        5        6        7
+        // in  _0000000 _1111111 _2222222 _3333333 _4444444 _5555555 _6666666 _7777777
+        // out 00000001 11111122 22222333 33334444 44455555 55666666 67777777
+
+        /* 0 */ out[oi++] = update() << 1 | update() >> 6
+        /* 1 */ out[oi++] = cache << 2 | update() >> 5
+        /* 2 */ out[oi++] = cache << 3 | update() >> 4
+        /* 3 */ out[oi++] = cache << 4 | update() >> 3
+        /* 4 */ out[oi++] = cache << 5 | update() >> 2
+        /* 5 */ out[oi++] = cache << 6 | update() >> 1
+        /* 6 */ out[oi++] = cache << 7 | update()
+    }
     return out
 }
 
