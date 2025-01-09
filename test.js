@@ -1,4 +1,4 @@
-import base128_ascii from "./dist/index.js";
+import base128 from "./dist/index.js";
 import fs from "fs"
 
 fs.existsSync("test-output") || fs.mkdirSync("test-output")
@@ -13,14 +13,14 @@ function test(name) {
     console.log()
 
     console.log('encode:')
-    const euq = base128_ascii.encode(Uint8Array.from(f)).toJSTemplateLiterals()
+    const encodedTemplate = base128.encode(Uint8Array.from(f)).toJSTemplateLiterals()
     // console.log(euq)
-    console.log('bytes length:', euq.length)
-    fs.writeFileSync(`test-output/${name}.js`, euq)
+    console.log('bytes length:', encodedTemplate.length)
+    fs.writeFileSync(`test-output/${name}.js`, encodedTemplate)
 
-    const euqeval = eval(euq)
+    const euqeval = eval(encodedTemplate)
     console.log('eval length:', euqeval.length)
-    const decoded = base128_ascii.decode(euqeval)
+    const decoded = base128.decode(euqeval)
     console.log('decoded length:', decoded.length)
     // euqal?
     const isEqual = (() => {

@@ -1,4 +1,6 @@
-Smaller than Base64, only use ASCII, can run in web browser.
+Smaller than base64, only use ASCII, can run in web browser.
+
+## Setup
 
 ```
 npm i base128-ascii
@@ -6,6 +8,10 @@ npm i base128-ascii
 
 ```js
 import base128 from "base128-ascii"
+
+const encodedTemplate = base128.encode(Uint8Array.from(fs.readFileSync("example.gz"))).toJSTemplateLiterals()
+
+const decoded = base128.decode(eval(encodedTemplate))
 ```
 
 ---
@@ -16,7 +22,7 @@ Char Code (ASCII) :
 '\0\1\2\3\4\5\6\7\b\t\n\v\f\r\x0E\x0F\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1A\x1B\x1C\x1D\x1E\x1F !"#$%&\'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\x7F'
 ```
 
-Test effect, Base128 is 102KiB smaller than Base64:
+Encode this jpg file, use base128 is 102KiB smaller than base64:
 
 ```
 screenshot-45.519.jpg
@@ -31,6 +37,8 @@ equal: true
 base64:
 length: 909448
 ```
+
+![](img.jpg)
 
 ---
 
