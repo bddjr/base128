@@ -8,6 +8,7 @@ npm i base128-ascii
 
 ```js
 import base128 from "base128-ascii"
+import fs from 'fs'
 
 const encodedTemplate = base128.encode(Uint8Array.from(fs.readFileSync("example.gz"))).toJSTemplateLiterals()
 
@@ -44,4 +45,4 @@ length: 909448
 
 The project was born for [vite-plugin-singlefile-compression](https://github.com/bddjr/vite-plugin-singlefile-compression).
 
-Made by bddjr, using MIT License.
+[Unlicense](https://unlicense.org).
