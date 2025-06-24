@@ -1,6 +1,6 @@
 {
   "name": "base128-ascii",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "main": "dist/index.js",
   "type": "module",
   "scripts": {
@@ -14,20 +14,16 @@
   },
   "author": "bddjr",
   "license": "Unlicense",
-  "description": "",
   "files": [
-    "dist",
-    "README.md",
-    "package.json",
-    "package-lock.json"
+    "dist"
   ],
   "keywords": [
     "base128",
     "base64",
     "ascii"
   ],
-  "dependencies": {
-    "@types/node": "^22.10.5",
+  "devDependencies": {
+    "@types/node": "^24.0.3",
     "rimraf": "^6.0.1",
     "typescript": "^5.7.3"
   }
