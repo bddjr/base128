@@ -1,11 +1,11 @@
 {
   "name": "base128-ascii",
-  "version": "2.1.5",
+  "version": "2.1.6",
   "main": "dist/index.js",
   "browser": "dist/browser.min.js",
   "type": "module",
   "scripts": {
-    "build": "rimraf dist && tsc && node scripts/build-for-browser.js",
+    "build": "node scripts/readme-jsdelivr-version.js && rimraf dist && tsc && node scripts/build-for-browser.js",
     "test": "npm run build && node scripts/test.js",
     "prepublishOnly": "npm run build"
   },
