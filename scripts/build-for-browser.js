@@ -30,4 +30,4 @@ fs.rmSync(tempName)
 
 js = result.outputFiles[0].text.replace(/;?\s*$/, '')
 
-fs.writeFileSync("dist/browser.js", js)
+fs.writeFileSync("dist/browser.min.js", js)
