@@ -23,7 +23,7 @@ const decoded = base128.decode(eval(encodedTemplate))
 
 #### HTML
 ```html
-<script src="https://cdn.jsdelivr.net/npm/base128-ascii/dist/browser.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/base128-ascii@latest/dist/browser.min.js"></script>
 ```
 
 #### JS
@@ -41,7 +41,7 @@ new Promise((rs) => {
     },
   });
   document.head.appendChild(document.createElement("script")).src =
-    "https://cdn.jsdelivr.net/npm/base128-ascii/dist/browser.min.js";
+    "https://cdn.jsdelivr.net/npm/base128-ascii@latest/dist/browser.min.js";
 }).then(() => {
   console.log("base128 loaded!", self.base128);
 });

@@ -1,10 +1,13 @@
+interface this_uint8Array {
+    uint8Array: Uint8Array
+}
+
 export class EncodeOutput {
     constructor(out: Uint8Array) {
-        this.uint8Array = out
+        (this as unknown as this_uint8Array).uint8Array = out
     }
-    uint8Array: Uint8Array
     toString() {
-        return new TextDecoder().decode(this.uint8Array)
+        return new TextDecoder().decode((this as unknown as this_uint8Array).uint8Array)
     }
     toJSTemplateLiterals() {
         return `\`${this.toString().replace(
@@ -20,7 +23,9 @@ export class EncodeOutput {
     }
 }
 
-export function encode(input: ArrayLike<number>): EncodeOutput {
+type Uint8ArrayLike = ArrayLike<number>
+
+export function encode(input: Uint8ArrayLike): EncodeOutput {
     var out = new Uint8Array(Math.ceil(input.length / 7 * 8))
         , ii = 0
         , oi = 0

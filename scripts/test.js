@@ -1,4 +1,4 @@
-import base128 from "./dist/index.js";
+import base128 from "../dist/index.js";
 import fs from "fs"
 
 fs.existsSync("test-output") || fs.mkdirSync("test-output")
