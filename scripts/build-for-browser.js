@@ -28,6 +28,17 @@ if (result.errors.length) {
 
 fs.rmSync(tempName)
 
-js = result.outputFiles[0].text.replace(/;?\s*$/, '')
+js = result.outputFiles[0].text.replace(/;?\s*$/, ';')
 
 fs.writeFileSync("dist/browser.min.js", js)
+
+//========================
+// README
+
+const readmeName = 'README.md'
+
+const oldReadme = fs.readFileSync(readmeName).toString()
+
+let newReadme = oldReadme.replace(/(\n```js browser\r?\n)[\d\D]+?(\n```)/, (m, a, b) => a + js + b)
+
+newReadme !== oldReadme && fs.writeFileSync(readmeName, newReadme)
