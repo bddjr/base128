@@ -1,11 +1,11 @@
 {
   "name": "base128-ascii",
-  "version": "2.1.2",
+  "version": "2.1.3",
   "main": "dist/index.js",
   "browser": "dist/browser.min.js",
   "type": "module",
   "scripts": {
-    "build": "rimraf dist && tsc && esbuild dist/index.js --bundle --global-name=base128 --outfile=dist/browser.js && esbuild dist/browser.js --minify --outfile=dist/browser.min.js",
+    "build": "rimraf dist && tsc && esbuild dist/index.js --bundle --global-name=base128 --minify --outfile=dist/browser.min.js",
     "test": "npm run build && node test.js",
     "prepublishOnly": "npm run build"
   },

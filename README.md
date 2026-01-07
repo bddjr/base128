@@ -14,7 +14,7 @@ npm i base128-ascii
 import base128 from "base128-ascii"
 import fs from 'fs'
 
-const encodedTemplate = base128.encode(Uint8Array.from(fs.readFileSync("example.gz"))).toJSTemplateLiterals()
+const encodedTemplate = base128.encode(fs.readFileSync("example.gz")).toJSTemplateLiterals()
 
 const decoded = base128.decode(eval(encodedTemplate))
 ```
@@ -28,22 +28,22 @@ const decoded = base128.decode(eval(encodedTemplate))
 
 #### JS
 ```js
-new Promise(rs => {
-    Object.defineProperty(self, 'base128', {
+new Promise((rs) => {
+  if (self.base128?.EncodeOutput) return rs();
+  Object.defineProperty(self, "base128", {
+    configurable: true,
+    set(value) {
+      Object.defineProperty(this, "base128", {
         configurable: true,
-        set(value) {
-            Object.defineProperty(this, 'base128', {
-                configurable: true,
-                value
-            });
-            rs();
-        }
-    });
-    document.head.appendChild(
-        document.createElement("script")
-    ).src = "https://cdn.jsdelivr.net/npm/base128-ascii/dist/browser.min.js";
+        value,
+      });
+      rs();
+    },
+  });
+  document.head.appendChild(document.createElement("script")).src =
+    "https://cdn.jsdelivr.net/npm/base128-ascii/dist/browser.min.js";
 }).then(() => {
-    console.log("base128 loaded!", base128);
+  console.log("base128 loaded!", self.base128);
 });
 ```
 

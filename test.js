@@ -5,6 +5,9 @@ fs.existsSync("test-output") || fs.mkdirSync("test-output")
 
 let allSuccess = true
 
+/**
+ * @param {string} name
+ */
 function test(name) {
     console.log('------------------')
     console.log(name)
@@ -13,7 +16,7 @@ function test(name) {
     console.log()
 
     console.log('encode:')
-    const encodedTemplate = base128.encode(Uint8Array.from(f)).toJSTemplateLiterals()
+    const encodedTemplate = base128.encode(f).toJSTemplateLiterals()
     // console.log(euq)
     console.log('bytes length:', encodedTemplate.length)
     fs.writeFileSync(`test-output/${name}.js`, encodedTemplate)
