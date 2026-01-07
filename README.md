@@ -4,6 +4,8 @@ The project was born for [vite-plugin-singlefile-compression](https://github.com
 
 ## Setup
 
+### npm
+
 ```
 npm i base128-ascii
 ```
@@ -15,6 +17,34 @@ import fs from 'fs'
 const encodedTemplate = base128.encode(Uint8Array.from(fs.readFileSync("example.gz"))).toJSTemplateLiterals()
 
 const decoded = base128.decode(eval(encodedTemplate))
+```
+
+### Browser (jsDelivr CDN)
+
+#### HTML
+```html
+<script src="https://cdn.jsdelivr.net/npm/base128-ascii/dist/browser.min.js"></script>
+```
+
+#### JS
+```js
+new Promise(rs => {
+    Object.defineProperty(self, 'base128', {
+        configurable: true,
+        set(value) {
+            Object.defineProperty(this, 'base128', {
+                configurable: true,
+                value
+            });
+            rs();
+        }
+    });
+    document.head.appendChild(
+        document.createElement("script")
+    ).src = "https://cdn.jsdelivr.net/npm/base128-ascii/dist/browser.min.js";
+}).then(() => {
+    console.log("base128 loaded!", base128);
+});
 ```
 
 ---
@@ -37,4 +67,4 @@ base64:
 length: 909448
 ```
 
-![](img.jpg)
+![img](img.jpg)

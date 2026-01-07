@@ -1,3 +1,25 @@
+export class EncodeOutput {
+    constructor(out: Uint8Array) {
+        this.uint8Array = out
+    }
+    uint8Array: Uint8Array
+    toString() {
+        return new TextDecoder().decode(this.uint8Array)
+    }
+    toJSTemplateLiterals() {
+        return `\`${this.toString().replace(
+            /[\r\\`]|\${|<\/script/g,
+            (match) => (
+                match == '\r'
+                    ? '\\r'
+                    : match == '</script'
+                        ? '<\\/script'
+                        : '\\' + match
+            )
+        )}\``
+    }
+}
+
 export function encode(input: Uint8Array) {
     const out = new Uint8Array(Math.ceil(input.length / 7 * 8))
     let ii = 0, oi = 0
@@ -16,25 +38,7 @@ export function encode(input: Uint8Array) {
         /* 7 */ out[oi++] = input[ii++] & 127
     }
 
-    let str: string, jstl: string
-    return {
-        uint8Array: out,
-        toString() {
-            return str ??= new TextDecoder().decode(out)
-        },
-        toJSTemplateLiterals() {
-            return jstl ??= `\`${(this.toString() as string).replace(
-                /[\r\\`]|\${|<\/script/g,
-                (match) => (
-                    match == '\r'
-                        ? '\\r'
-                        : match == '</script'
-                            ? '<\\/script'
-                            : '\\' + match
-                )
-            )}\``
-        }
-    }
+    return new EncodeOutput(out)
 }
 
 export function decode(input: string) {
@@ -62,6 +66,7 @@ export function decode(input: string) {
 }
 
 const base128 = {
+    EncodeOutput,
     encode,
     decode
 }
