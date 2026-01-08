@@ -1,3 +1,5 @@
+type Uint8ArrayLike = ArrayLike<number>
+
 interface this_uint8Array {
     uint8Array: Uint8Array
 }
@@ -23,9 +25,9 @@ export class EncodeOutput {
     }
 }
 
-type Uint8ArrayLike = ArrayLike<number>
-
-export function encode(input: Uint8ArrayLike): EncodeOutput {
+export function encode(input: Uint8ArrayLike | string): EncodeOutput {
+    if (typeof input == 'string')
+        input = new TextEncoder().encode(input)
     var out = new Uint8Array(Math.ceil(input.length / 7 * 8))
         , ii = 0
         , oi = 0
