@@ -1,3 +1,4 @@
+import { exit } from "process";
 import base128 from "../dist/index.js";
 import fs from "fs"
 
@@ -78,3 +79,5 @@ test(base128);
 console.log('------------------')
 console.log('allSuccess:', allSuccess)
 console.log()
+
+allSuccess || exit(1)
