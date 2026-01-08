@@ -28,10 +28,11 @@ export class EncodeOutput {
 export function encode(input: Uint8ArrayLike | string): EncodeOutput {
     if (typeof input == 'string')
         input = new TextEncoder().encode(input)
-    var out = new Uint8Array(Math.ceil(input.length / 7 * 8))
+    var il = input.length
+        , out = new Uint8Array(Math.ceil(il / 7 * 8))
         , ii = 0
         , oi = 0
-    while (ii < input.length) {
+    while (ii < il) {
         //     0        1        2        3        4        5        6        7
         // in  00000000 11111111 22222222 33333333 44444444 55555555 66666666
         // out _0000000 _0111111 _1122222 _2223333 _3333444 _4444455 _5555556 _6666666
@@ -49,7 +50,8 @@ export function encode(input: Uint8ArrayLike | string): EncodeOutput {
 }
 
 export function decode(input: string): Uint8Array {
-    var out = new Uint8Array(Math.floor(input.length / 8 * 7))
+    var il = input.length
+        , out = new Uint8Array(Math.floor(il / 8 * 7))
         , ii = 0
         , oi = 0
         , cache: number
@@ -58,7 +60,7 @@ export function decode(input: string): Uint8Array {
                 ? cache = 0 // In HTML, 0 is likely to be converted to 65533 (�)
                 : cache
         )
-    while (ii < input.length) {
+    while (ii < il) {
         //     0        1        2        3        4        5        6        7
         // in  _0000000 _1111111 _2222222 _3333333 _4444444 _5555555 _6666666 _7777777
         // out 00000001 11111122 22222333 33334444 44455555 55666666 67777777
