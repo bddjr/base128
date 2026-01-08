@@ -56,7 +56,7 @@ export function decode(input: string): Uint8Array {
         , oi = 0
         , cache: number
         , next = () => (
-            (cache = input.charCodeAt(ii++)) >> 7
+            (cache = input.charCodeAt(ii++)) > 127
                 ? cache = 0 // In HTML, 0 is likely to be converted to 65533 (�)
                 : cache
         )
