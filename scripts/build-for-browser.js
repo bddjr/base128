@@ -24,18 +24,20 @@ js = minify_sync(js, {
 
 fs.writeFileSync("dist/browser.min.js", js)
 
-rimrafSync(['dist/browser.js', 'dist/browser.d.ts'])
+rimrafSync('dist/browser.d.ts')
 
 //========================
 // README
 
 const readmeName = 'README.md'
 
-const oldReadme = fs.readFileSync(readmeName).toString()
+if (fs.existsSync(readmeName)) {
+    const oldReadme = fs.readFileSync(readmeName).toString()
 
-let newReadme = oldReadme.replace(
-    /(\n```html browser\r?\n)[\d\D]+?(\n```)/,
-    (m, a, b) => (a + '<script>\n' + js + '\n</script>' + b)
-)
+    let newReadme = oldReadme.replace(
+        /(\n```html browser\r?\n)[\d\D]+?(\n```)/,
+        (m, a, b) => (a + '<script>\n' + js + '\n</script>' + b)
+    )
 
-newReadme !== oldReadme && fs.writeFileSync(readmeName, newReadme)
+    newReadme !== oldReadme && fs.writeFileSync(readmeName, newReadme)
+}
