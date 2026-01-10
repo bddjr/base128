@@ -1,6 +1,6 @@
 {
   "name": "base128-ascii",
-  "version": "2.1.9",
+  "version": "2.1.10",
   "main": "dist/index.js",
   "browser": "dist/browser.min.js",
   "type": "module",

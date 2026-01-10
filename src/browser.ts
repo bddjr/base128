@@ -44,13 +44,13 @@ interface this_uint8Array {
                 // in  00000000 11111111 22222222 33333333 44444444 55555555 66666666
                 // out _0000000 _0111111 _1122222 _2223333 _3333444 _4444455 _5555556 _6666666
 
-                /* 0 */ out[oi++] = input[ii] >> 1
-                /* 1 */ out[oi++] = input[ii++] << 6 & 127 | input[ii] >> 2
-                /* 2 */ out[oi++] = input[ii++] << 5 & 127 | input[ii] >> 3
-                /* 3 */ out[oi++] = input[ii++] << 4 & 127 | input[ii] >> 4
-                /* 4 */ out[oi++] = input[ii++] << 3 & 127 | input[ii] >> 5
-                /* 5 */ out[oi++] = input[ii++] << 2 & 127 | input[ii] >> 6
-                /* 6 */ out[oi++] = input[ii++] << 1 & 127 | input[ii] >> 7
+                /* 0 */ out[oi++] = input[ii] >> 1 & 127
+                /* 1 */ out[oi++] = (input[ii++] << 6 | input[ii] >> 2) & 127
+                /* 2 */ out[oi++] = (input[ii++] << 5 | input[ii] >> 3) & 127
+                /* 3 */ out[oi++] = (input[ii++] << 4 | input[ii] >> 4) & 127
+                /* 4 */ out[oi++] = (input[ii++] << 3 | input[ii] >> 5) & 127
+                /* 5 */ out[oi++] = (input[ii++] << 2 | input[ii] >> 6) & 127
+                /* 6 */ out[oi++] = (input[ii++] << 1 | input[ii] >> 7) & 127
                 /* 7 */ out[oi++] = input[ii++] & 127
             }
             return new EncodeOutput(out)
