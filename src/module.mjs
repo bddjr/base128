@@ -1,15 +1,14 @@
-type Uint8ArrayLike = ArrayLike<number>
-
-interface this_uint8Array {
-    uint8Array: Uint8Array
-}
+//@ts-nocheck
 
 export class EncodeOutput {
-    constructor(out: Uint8Array) {
-        (this as unknown as this_uint8Array).uint8Array = out
+    /**
+     * @param {Uint8Array} out
+     */
+    constructor(out) {
+        this.uint8Array = out
     }
     toString() {
-        return new TextDecoder().decode((this as unknown as this_uint8Array).uint8Array)
+        return new TextDecoder().decode(this.uint8Array)
     }
     toJSTemplateLiterals() {
         return `\`${this.toString().replace(
@@ -25,7 +24,10 @@ export class EncodeOutput {
     }
 }
 
-export function encode(input: Uint8ArrayLike | string): EncodeOutput {
+/**
+ * @param {Uint8Array | string} input
+ */
+export function encode(input) {
     if (typeof input == 'string')
         input = new TextEncoder().encode(input)
     var il = input.length
@@ -49,12 +51,15 @@ export function encode(input: Uint8ArrayLike | string): EncodeOutput {
     return new EncodeOutput(out)
 }
 
-export function decode(input: string): Uint8Array {
+/**
+ * @param {string} input
+ */
+export function decode(input) {
     var il = input.length
         , out = new Uint8Array(Math.floor(il / 8 * 7))
         , ii = 0
         , oi = 0
-        , cache: number
+        , cache
         , next = () => (
             (cache = input.charCodeAt(ii++)) > 127
                 ? cache = 0 // In HTML, 0 is likely to be converted to 65533 (�)
@@ -76,10 +81,8 @@ export function decode(input: string): Uint8Array {
     return out
 }
 
-const base128 = {
+export default {
     EncodeOutput,
     encode,
     decode
 }
-
-export default base128

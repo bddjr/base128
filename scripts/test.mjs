@@ -1,5 +1,8 @@
+//@ts-check
+
 import { exit } from "process";
-import base128 from "../dist/index.js";
+import base128 from "../src/module.mjs";
+import base128_require from "./test-require.cjs"
 import fs from "fs"
 
 fs.existsSync("test-output") || fs.mkdirSync("test-output")
@@ -62,19 +65,20 @@ function test(base128) {
     test2("screenshot-45.519.jpg")
 }
 
-// test npm
+// test module
 test(base128);
 
+// test main
+test(base128_require);
+
 // test browser
-((self) => {
-    // @ts-ignore
-    delete self.base128
-
+(function () {
     eval(fs.readFileSync('dist/browser.min.js').toString())
-
     // @ts-ignore
-    test(self.base128)
-})(global);
+    if (Object.keys(this).length != 1) throw this;
+    //@ts-ignore
+    test(this.base128)
+}).call({});
 
 console.log('------------------')
 console.log('allSuccess:', allSuccess)

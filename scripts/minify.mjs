@@ -1,11 +1,13 @@
+import package_json from '../package.json' with {type: 'json'}
 import fs from 'fs'
 import { minify_sync } from 'terser';
-import { rimrafSync } from 'rimraf'
 
-let js = fs.readFileSync('dist/browser.js').toString()
+fs.existsSync('dist') || fs.mkdirSync('dist')
+
+let js = fs.readFileSync(package_json.main).toString()
 
 // @ts-ignore
-js = minify_sync(js, {
+js = minify_sync('{' + js.replace('module.exports', 'this.base128') + '}', {
     compress: {
         ecma: 2015,
         keep_classnames: true,
@@ -22,9 +24,7 @@ js = minify_sync(js, {
     }
 }).code.replaceAll("</script", "<\\/script")
 
-fs.writeFileSync("dist/browser.min.js", js)
-
-rimrafSync('dist/browser.d.ts')
+fs.writeFileSync(package_json.browser, js)
 
 //========================
 // README

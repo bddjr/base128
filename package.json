@@ -1,13 +1,14 @@
 {
   "name": "base128-ascii",
-  "version": "2.1.10",
-  "main": "dist/index.js",
-  "browser": "dist/browser.min.js",
-  "type": "module",
+  "version": "2.1.11",
+  "type": "commonjs",
+  "main": "./src/main.js",
+  "module": "./src/module.mjs",
+  "browser": "./dist/browser.min.js",
   "scripts": {
-    "build": "rimraf dist && tsc && node scripts/build-for-browser.js && es-check es2015 --module dist/**/*.js --not dist/browser.* && es-check es2015 dist/browser.*",
-    "test": "npm run build && node scripts/test.js",
-    "prepublishOnly": "npm run test"
+    "build": "es-check es6 --checkFeatures --module src/**/*.mjs && rimraf dist && node scripts/minify.mjs && es-check es6 --checkFeatures dist/**/*.js src/**/*.js",
+    "test": "node --run build && node scripts/test.mjs",
+    "prepublishOnly": "node --run test"
   },
   "repository": {
     "type": "git",
@@ -16,20 +17,21 @@
   "author": "bddjr",
   "license": "Unlicense",
   "files": [
-    "dist"
+    "dist",
+    "src"
   ],
   "keywords": [
     "base128",
     "base64",
     "ascii",
     "encode",
-    "decode"
+    "decode",
+    "atob",
+    "btoa"
   ],
   "devDependencies": {
-    "@types/node": "^24.0.3",
     "es-check": "^9.5.3",
     "rimraf": "^6.0.1",
-    "terser": "^5.44.1",
-    "typescript": "^5.7.3"
+    "terser": "^5.44.1"
   }
 }
