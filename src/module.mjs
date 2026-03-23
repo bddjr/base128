@@ -56,7 +56,7 @@ export function encode(input) {
  */
 export function decode(input) {
     var il = input.length
-        , out = new Uint8Array(Math.floor(il / 8 * 7))
+        , out = new Uint8Array(il / 8 * 7)
         , ii = 0
         , oi = 0
         , cache

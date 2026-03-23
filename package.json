@@ -1,6 +1,6 @@
 {
   "name": "base128-ascii",
-  "version": "2.1.11",
+  "version": "2.1.12",
   "type": "commonjs",
   "main": "./src/main.js",
   "module": "./src/module.mjs",
