@@ -30,8 +30,8 @@
     "btoa"
   ],
   "devDependencies": {
+    "@bddjr/rimraf": "^0.1.0",
     "es-check": "^9.5.3",
-    "rimraf": "^6.0.1",
     "terser": "^5.44.1"
   }
 }
