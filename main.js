@@ -12,7 +12,7 @@ export class EncodeOutput {
     }
     toJSTemplateLiterals() {
         return `\`${this.toString().replace(
-            /[\r\\`]|\${|<\/script/g,
+            /[\r\\`]|\$\{|<\/script/g,
             (match) => (
                 match == '\r'
                     ? '\\r'

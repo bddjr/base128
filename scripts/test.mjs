@@ -1,11 +1,17 @@
 //@ts-check
 
-import { exit } from "process";
-import base128 from "../src/module.mjs";
-import base128_require from "./test-require.cjs"
+import base128 from "../main.js";
 import fs from "fs"
 
-fs.existsSync("test-output") || fs.mkdirSync("test-output")
+const enableOutput = false
+
+const inputDir = "testdata/input"
+const outputDir = "testdata/output"
+
+fs.rmSync(outputDir, { recursive: true, force: true })
+
+if (enableOutput && !fs.existsSync(outputDir))
+    fs.mkdirSync(outputDir)
 
 let allSuccess = true
 
@@ -19,25 +25,27 @@ function test(base128) {
     function test2(name) {
         console.log('------------------')
         console.log(name)
-        const f = fs.readFileSync("test-input/" + name)
-        console.log('file length:', f.length)
+        const file = fs.readFileSync(inputDir + "/" + name)
+        console.log('file length:', file.length)
         console.log()
 
-        console.log('encode:')
-        const encodedTemplate = base128.encode(f).toJSTemplateLiterals()
+        console.log('base128:')
+        const encodedTemplate = base128.encode(file).toJSTemplateLiterals()
         // console.log(euq)
-        console.log('bytes length:', encodedTemplate.length)
-        fs.writeFileSync(`test-output/${name}.js`, encodedTemplate)
+        console.log('toJSTemplateLiterals length:', encodedTemplate.length)
+
+        if (enableOutput)
+            fs.writeFileSync(`${outputDir}/${name}.js`, encodedTemplate)
 
         const euqeval = eval(encodedTemplate)
-        console.log('eval length:', euqeval.length)
+        // console.log('eval length:', euqeval.length)
         const decoded = base128.decode(euqeval)
-        console.log('decoded length:', decoded.length)
+        // console.log('decoded length:', decoded.length)
         // euqal?
         const isEqual = (() => {
-            if (decoded.length !== f.length) return false
+            if (decoded.length !== file.length) return false
             for (const i in decoded) {
-                if (decoded[i] !== f[i]) return false
+                if (decoded[i] !== file[i]) return false
             }
             return true
         })()
@@ -46,9 +54,9 @@ function test(base128) {
         console.log()
 
         console.log('base64:')
-        const b64 = f.toString('base64')
+        // const b64 = f.toString('base64')
         // console.log(b64)
-        console.log('length:', b64.length)
+        console.log('encoded length:', Math.ceil(file.length / 3) * 4)
     }
 
     test2("0.txt")
@@ -65,23 +73,11 @@ function test(base128) {
     test2("screenshot-45.519.jpg")
 }
 
-// test module
+// test esm
 test(base128);
-
-// test main
-test(base128_require);
-
-// test browser
-(function () {
-    eval(fs.readFileSync('dist/browser.min.js').toString())
-    // @ts-ignore
-    if (Object.keys(this).length != 1) throw this;
-    //@ts-ignore
-    test(this.base128)
-}).call({});
 
 console.log('------------------')
 console.log('allSuccess:', allSuccess)
 console.log()
 
-allSuccess || exit(1)
+allSuccess || process.exit(1)

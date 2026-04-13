@@ -1,28 +1,26 @@
 {
   "name": "base128-ascii",
-  "version": "2.1.12",
-  "type": "commonjs",
-  "main": "./src/main.js",
-  "module": "./src/module.mjs",
-  "browser": "./dist/browser.min.js",
+  "version": "2.2.0",
+  "author": "bddjr",
+  "license": "Unlicense",
+  "type": "module",
+  "main": "./main.js",
+  "files": [
+    "main.js",
+    "main.d.ts"
+  ],
   "scripts": {
-    "build": "es-check es6 --checkFeatures --module src/**/*.mjs && rimraf dist && node scripts/minify.mjs && es-check es6 --checkFeatures dist/**/*.js src/**/*.js",
-    "test": "node --run build && node scripts/test.mjs",
+    "test": "es-check es6 --checkFeatures --module *.js && node scripts/test.mjs",
     "prepublishOnly": "node --run test"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/bddjr/base128.git"
   },
-  "author": "bddjr",
-  "license": "Unlicense",
-  "files": [
-    "dist",
-    "src"
-  ],
   "keywords": [
     "base128",
     "base64",
+    "base",
     "ascii",
     "encode",
     "decode",
@@ -30,8 +28,6 @@
     "btoa"
   ],
   "devDependencies": {
-    "@bddjr/rimraf": "^0.1.0",
-    "es-check": "^9.5.3",
-    "terser": "^5.44.1"
+    "es-check": "^9.5.3"
   }
 }
