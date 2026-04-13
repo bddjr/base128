@@ -1,14 +1,8 @@
 //@ts-nocheck
 
-export class EncodeOutput {
-    /**
-     * @param {Uint8Array} out
-     */
-    constructor(out) {
-        this.uint8Array = out
-    }
+export class Base128Bytes extends Uint8Array {
     toString() {
-        return new TextDecoder().decode(this.uint8Array)
+        return new TextDecoder().decode(this)
     }
     toJSTemplateLiterals() {
         return `\`${this.toString().replace(
@@ -31,7 +25,7 @@ export function encode(input) {
     if (typeof input == 'string')
         input = new TextEncoder().encode(input)
     var il = input.length
-        , out = new Uint8Array(Math.ceil(il / 7 * 8))
+        , out = new Base128Bytes(Math.ceil(il / 7 * 8))
         , ii = 0
         , oi = 0
     while (ii < il) {
@@ -48,7 +42,7 @@ export function encode(input) {
         /* 6 */ out[oi++] = (input[ii++] << 1 | input[ii] >> 7) & 127
         /* 7 */ out[oi++] = input[ii++] & 127
     }
-    return new EncodeOutput(out)
+    return out
 }
 
 /**
@@ -82,7 +76,7 @@ export function decode(input) {
 }
 
 export default {
-    EncodeOutput,
+    Base128Bytes,
     encode,
     decode
 }

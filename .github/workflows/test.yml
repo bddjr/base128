@@ -2,24 +2,29 @@ name: test
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
 
 jobs:
   test:
-
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout
-      uses: actions/checkout@v6
+      - name: Checkout
+        uses: actions/checkout@v6
 
-    - name: Setup Node
-      uses: actions/setup-node@v6
-      with:
-        node-version: latest
-        check-latest: true
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: latest
+          check-latest: true
 
-    - run: npm i
-    - run: npm test
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10
+
+      - run: pnpm i
+
+      - run: npm test

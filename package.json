@@ -1,6 +1,6 @@
 {
   "name": "base128-ascii",
-  "version": "2.2.0",
+  "version": "3.0.0",
   "author": "bddjr",
   "license": "Unlicense",
   "type": "module",
@@ -10,7 +10,7 @@
     "main.d.ts"
   ],
   "scripts": {
-    "test": "es-check es6 --checkFeatures --module *.js && node scripts/test.mjs",
+    "test": "es-check es6 --checkFeatures --module main.js && node scripts/test.mjs",
     "prepublishOnly": "node --run test"
   },
   "repository": {
