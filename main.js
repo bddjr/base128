@@ -20,6 +20,9 @@ export const Base128Bytes = (() => {
                 )
             )}\``
         }
+        uint8Array() {
+            return new Uint8Array(this.buffer)
+        }
     }
     const p = Object.getPrototypeOf(Uint8Array.prototype)
     for (const key of ["buffer", "byteLength", "byteOffset", "length"]) {

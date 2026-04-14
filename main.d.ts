@@ -17,6 +17,11 @@ export declare class Base128Bytes {
     toJSTemplateLiterals(): string;
 
     /**
+     * Returns a base128 Uint8Array.
+     */
+    uint8Array(): Uint8Array<ArrayBufferLike>;
+
+    /**
      * The ArrayBuffer instance referenced by the array.
      */
     get buffer(): ArrayBufferLike;
