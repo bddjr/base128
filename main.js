@@ -3,7 +3,7 @@
 export const Base128Bytes = (() => {
     class Base128Bytes {
         constructor() {
-            return Reflect.construct(Uint8Array, arguments, Base128Bytes)
+            return Reflect.construct(Uint8Array, arguments, new.target)
         }
         toString() {
             return new TextDecoder().decode(this)
@@ -21,8 +21,10 @@ export const Base128Bytes = (() => {
             )}\``
         }
     }
-    const { buffer, byteLength, byteOffset, length } = Object.getOwnPropertyDescriptors(Object.getPrototypeOf(Uint8Array.prototype))
-    Object.defineProperties(Base128Bytes.prototype, { buffer, byteLength, byteOffset, length })
+    const p = Object.getPrototypeOf(Uint8Array.prototype)
+    for (const key of ["buffer", "byteLength", "byteOffset", "length"]) {
+        Object.defineProperty(Base128Bytes.prototype, key, Object.getOwnPropertyDescriptor(p, key))
+    }
     return Base128Bytes
 })()
 
