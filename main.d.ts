@@ -1,10 +1,5 @@
-export declare class Base128Bytes {
-    constructor();
-    constructor(length: number);
-    constructor(array: ArrayLike<number>);
-    constructor<TArrayBuffer extends ArrayBufferLike = ArrayBuffer>(buffer: TArrayBuffer, byteOffset?: number, length?: number);
-    constructor(buffer: ArrayBuffer, byteOffset?: number, length?: number);
-    constructor(array: ArrayLike<number> | ArrayBuffer);
+export declare class EncodeResult {
+    constructor(bytes: Uint8Array);
 
     /**
      * Returns a base128 string.
@@ -16,40 +11,17 @@ export declare class Base128Bytes {
      */
     toJSTemplateLiterals(): string;
 
-    /**
-     * Returns a base128 Uint8Array.
-     */
-    uint8Array(): Uint8Array<ArrayBufferLike>;
-
-    /**
-     * The ArrayBuffer instance referenced by the array.
-     */
     get buffer(): ArrayBufferLike;
 
-    /**
-     * The length in bytes of the array.
-     */
-    get byteLength(): number;
-
-    /**
-     * The offset in bytes of the array.
-     */
-    get byteOffset(): number;
-
-    /**
-     * The length of the array.
-     */
-    get length(): number;
-
-    [index: number]: number;
+    readonly bytes: Uint8Array;
 }
 
-export declare function encode(input: Uint8Array | string): Base128Bytes;
+export declare function encode(input: Uint8Array | string | ArrayLike<number> | ArrayBuffer | Pick<ArrayBufferView, "buffer">): EncodeResult;
 
 export declare function decode(input: string): Uint8Array;
 
 declare const base128 = {
-    Base128Bytes,
+    EncodeResult,
     encode,
     decode,
 };

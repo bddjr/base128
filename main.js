@@ -1,44 +1,60 @@
 //@ts-nocheck
 
-export const Base128Bytes = (() => {
-    class Base128Bytes {
-        constructor() {
-            return Reflect.construct(Uint8Array, arguments, new.target)
+export class EncodeResult {
+    /**
+     * @param {Uint8Array} bytes 
+     */
+    constructor(bytes) {
+        if (!(bytes instanceof Uint8Array)) {
+            throw TypeError(`EncodeResult: Must input Uint8Array`)
         }
-        toString() {
-            return new TextDecoder().decode(this)
-        }
-        toJSTemplateLiterals() {
-            return `\`${this.toString().replace(
-                /[\r\\`]|\$\{|<\/script/g,
-                (match) => (
-                    match == '\r'
-                        ? '\\r'
-                        : match == '</script'
-                            ? '<\\/script'
-                            : '\\' + match
-                )
-            )}\``
-        }
-        uint8Array() {
-            return new Uint8Array(this.buffer)
-        }
+        Object.defineProperty(this, "bytes", { value: bytes, enumerable: true })
     }
-    const p = Object.getPrototypeOf(Uint8Array.prototype)
-    for (const key of ["buffer", "byteLength", "byteOffset", "length"]) {
-        Object.defineProperty(Base128Bytes.prototype, key, Object.getOwnPropertyDescriptor(p, key))
+    toString() {
+        return new TextDecoder().decode(this.bytes)
     }
-    return Base128Bytes
-})()
+    toJSTemplateLiterals() {
+        return `\`${this.toString().replace(
+            /[\r\\`]|\$\{|<\/script/g,
+            (match) => (
+                match == '\r'
+                    ? '\\r'
+                    : match == '</script'
+                        ? '<\\/script'
+                        : '\\' + match
+            )
+        )}\``
+    }
+    get buffer() {
+        return this.bytes.buffer
+    }
+}
 
 /**
- * @param {Uint8Array | string} input
+ * @param {Uint8Array | string | ArrayLike<number> | ArrayBuffer | Pick<ArrayBufferView, "buffer">} input
  */
 export function encode(input) {
-    if (typeof input == 'string')
+    if (input == null) {
+        throw TypeError(`encode: Cannot input null or undefined`)
+    }
+    if (input instanceof Uint8Array) {
+        // Uint8Array | Buffer
+    } else if (typeof input == 'string') {
+        // string
         input = new TextEncoder().encode(input)
+    } else if (input instanceof ArrayBuffer) {
+        // ArrayBuffer
+        input = new Uint8Array(input)
+    } else if (input.buffer instanceof ArrayBuffer) {
+        // TypedArray | DataView | Pick<ArrayBufferView, "buffer">
+        input = new Uint8Array(input.buffer)
+    }
+    // else ArrayLike<number>
     var il = input.length
-        , out = new Base128Bytes(Math.ceil(il / 7 * 8))
+    if (typeof il != 'number') {
+        throw TypeError(`encode: typeof input.length must be number`)
+    }
+    var out = new Uint8Array(Math.ceil(il / 7 * 8))
         , ii = 0
         , oi = 0
     while (ii < il) {
@@ -55,13 +71,16 @@ export function encode(input) {
         /* 6 */ out[oi++] = (input[ii++] << 1 | input[ii] >> 7) & 127
         /* 7 */ out[oi++] = input[ii++] & 127
     }
-    return out
+    return new EncodeResult(out)
 }
 
 /**
  * @param {string} input
  */
 export function decode(input) {
+    if (typeof input != 'string') {
+        throw TypeError(`decode: Must input string`)
+    }
     var il = input.length
         , out = new Uint8Array(il / 8 * 7)
         , ii = 0
@@ -89,7 +108,7 @@ export function decode(input) {
 }
 
 export default {
-    Base128Bytes,
+    EncodeResult,
     encode,
     decode
 }

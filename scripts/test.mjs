@@ -78,17 +78,10 @@ test(base128);
 
 console.log('------------------')
 
-// test prototype
-const bb = new base128.Base128Bytes(7)
-if (!(bb.buffer instanceof ArrayBuffer)) throw TypeError()
-if (bb.byteLength !== 7) throw TypeError()
-if (bb.byteOffset !== 0) throw TypeError()
-if (bb.length !== 7) throw TypeError()
-if (!(bb.uint8Array() instanceof Uint8Array)) throw TypeError()
-if (typeof bb.toString() != 'string') throw TypeError()
-if (typeof bb.toJSTemplateLiterals() != 'string') throw TypeError()
+// base128.encode(class { static buffer = new ArrayBuffer })
 
 console.log('allSuccess:', allSuccess)
 console.log()
+
 
 allSuccess || process.exit(1)
