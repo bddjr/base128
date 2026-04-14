@@ -20,10 +20,10 @@ export declare function encode(input: Uint8Array | string | ArrayLike<number> | 
 
 export declare function decode(input: string): Uint8Array;
 
-declare const base128 = {
-    EncodeResult,
-    encode,
-    decode,
+declare const base128: {
+    EncodeResult: typeof EncodeResult,
+    encode: typeof encode,
+    decode: typeof decode,
 };
 
 export default base128;
