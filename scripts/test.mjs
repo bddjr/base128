@@ -76,6 +76,13 @@ function test(base128) {
 // test esm
 test(base128);
 
+// test prototype
+const bb = new base128.Base128Bytes(7)
+if (!(bb.buffer instanceof ArrayBuffer)) throw TypeError()
+if (bb.byteLength !== 7) throw TypeError()
+if (bb.byteOffset !== 0) throw TypeError()
+if (bb.length !== 7) throw TypeError()
+
 console.log('------------------')
 console.log('allSuccess:', allSuccess)
 console.log()

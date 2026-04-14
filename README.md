@@ -14,9 +14,11 @@ npm i base128-ascii
 import base128 from "base128-ascii"
 import fs from "fs"
 
-const encodedTemplate = base128.encode(fs.readFileSync("example.gz")).toJSTemplateLiterals()
+const input = fs.readFileSync("example.gz")
 
-const decoded = base128.decode(eval(encodedTemplate))
+const encodedTemplate = base128.encode(input).toJSTemplateLiterals()
+
+const decodedBytes = base128.decode(eval(encodedTemplate))
 ```
 
 ---

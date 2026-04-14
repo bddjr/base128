@@ -1,22 +1,30 @@
 //@ts-nocheck
 
-export class Base128Bytes extends Uint8Array {
-    toString() {
-        return new TextDecoder().decode(this)
+export const Base128Bytes = (() => {
+    class Base128Bytes {
+        constructor() {
+            return Reflect.construct(Uint8Array, arguments, Base128Bytes)
+        }
+        toString() {
+            return new TextDecoder().decode(this)
+        }
+        toJSTemplateLiterals() {
+            return `\`${this.toString().replace(
+                /[\r\\`]|\$\{|<\/script/g,
+                (match) => (
+                    match == '\r'
+                        ? '\\r'
+                        : match == '</script'
+                            ? '<\\/script'
+                            : '\\' + match
+                )
+            )}\``
+        }
     }
-    toJSTemplateLiterals() {
-        return `\`${this.toString().replace(
-            /[\r\\`]|\$\{|<\/script/g,
-            (match) => (
-                match == '\r'
-                    ? '\\r'
-                    : match == '</script'
-                        ? '<\\/script'
-                        : '\\' + match
-            )
-        )}\``
-    }
-}
+    const { buffer, byteLength, byteOffset, length } = Object.getOwnPropertyDescriptors(Object.getPrototypeOf(Uint8Array.prototype))
+    Object.defineProperties(Base128Bytes.prototype, { buffer, byteLength, byteOffset, length })
+    return Base128Bytes
+})()
 
 /**
  * @param {Uint8Array | string} input
