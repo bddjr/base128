@@ -2,13 +2,10 @@
 
 export class EncodeResult {
     /**
-     * @param {Uint8Array} bytes 
+     * @param {Uint8Array<ArrayBuffer>} bytes 
      */
     constructor(bytes) {
-        if (!(bytes instanceof Uint8Array)) {
-            throw TypeError(`EncodeResult: Must input Uint8Array`)
-        }
-        Object.defineProperty(this, "bytes", { value: bytes, enumerable: true })
+        this.bytes = bytes
     }
     toString() {
         return new TextDecoder().decode(this.bytes)
@@ -25,36 +22,14 @@ export class EncodeResult {
             )
         )}\``
     }
-    get buffer() {
-        return this.bytes.buffer
-    }
 }
 
 /**
- * @param {Uint8Array | string | ArrayLike<number> | ArrayBuffer | Pick<ArrayBufferView, "buffer">} input
+ * @param {Uint8Array} input
  */
 export function encode(input) {
-    if (input == null) {
-        throw TypeError(`encode: Cannot input null or undefined`)
-    }
-    if (input instanceof Uint8Array) {
-        // Uint8Array | Buffer
-    } else if (typeof input == 'string') {
-        // string
-        input = new TextEncoder().encode(input)
-    } else if (input instanceof ArrayBuffer) {
-        // ArrayBuffer
-        input = new Uint8Array(input)
-    } else if (input.buffer instanceof ArrayBuffer) {
-        // TypedArray | DataView | Pick<ArrayBufferView, "buffer">
-        input = new Uint8Array(input.buffer)
-    }
-    // else ArrayLike<number>
     var il = input.length
-    if (typeof il != 'number') {
-        throw TypeError(`encode: typeof input.length must be number`)
-    }
-    var out = new Uint8Array(Math.ceil(il / 7 * 8))
+        , out = new Uint8Array(Math.ceil(il / 7 * 8))
         , ii = 0
         , oi = 0
     while (ii < il) {
@@ -78,9 +53,6 @@ export function encode(input) {
  * @param {string} input
  */
 export function decode(input) {
-    if (typeof input != 'string') {
-        throw TypeError(`decode: Must input string`)
-    }
     var il = input.length
         , out = new Uint8Array(il / 8 * 7)
         , ii = 0

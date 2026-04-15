@@ -1,6 +1,6 @@
 {
   "name": "base128-ascii",
-  "version": "4.0.1",
+  "version": "5.0.0",
   "author": "bddjr",
   "license": "Unlicense",
   "type": "module",

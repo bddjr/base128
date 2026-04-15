@@ -1,5 +1,5 @@
 export declare class EncodeResult {
-    constructor(bytes: Uint8Array);
+    constructor(bytes: Uint8Array<ArrayBuffer>);
 
     /**
      * Returns a base128 string.
@@ -11,14 +11,12 @@ export declare class EncodeResult {
      */
     toJSTemplateLiterals(): string;
 
-    get buffer(): ArrayBufferLike;
-
-    readonly bytes: Uint8Array;
+    bytes: Uint8Array<ArrayBuffer>;
 }
 
-export declare function encode(input: Uint8Array | string | ArrayLike<number> | ArrayBuffer | Pick<ArrayBufferView, "buffer">): EncodeResult;
+export declare function encode(input: Uint8Array): EncodeResult;
 
-export declare function decode(input: string): Uint8Array;
+export declare function decode(input: string): Uint8Array<ArrayBuffer>;
 
 declare const base128: {
     EncodeResult: typeof EncodeResult,
