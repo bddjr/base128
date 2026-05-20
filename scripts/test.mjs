@@ -30,7 +30,12 @@ function test(base128) {
         console.log()
 
         console.log('base128:')
-        const encodedTemplate = base128.encode(file).toJSTemplateLiterals()
+        console.time('time encode')
+        const result = base128.encode(file)
+        console.timeEnd('time encode')
+        console.time('time toJSTemplateLiterals')
+        const encodedTemplate = result.toJSTemplateLiterals()
+        console.timeEnd('time toJSTemplateLiterals')
         // console.log(euq)
         console.log('toJSTemplateLiterals length:', encodedTemplate.length)
 
@@ -42,13 +47,7 @@ function test(base128) {
         const decoded = base128.decode(euqeval)
         // console.log('decoded length:', decoded.length)
         // euqal?
-        const isEqual = (() => {
-            if (decoded.length !== file.length) return false
-            for (const i in decoded) {
-                if (decoded[i] !== file[i]) return false
-            }
-            return true
-        })()
+        const isEqual = file.equals(decoded);
         allSuccess &&= isEqual
         console.log('equal:', isEqual)
         console.log()
@@ -59,18 +58,9 @@ function test(base128) {
         console.log('encoded length:', Math.ceil(file.length / 3) * 4)
     }
 
-    test2("0.txt")
-    test2("1.txt")
-    test2("2.txt")
-    test2("3.txt")
-    test2("4.txt")
-    test2("5.txt")
-    test2("6.txt")
-    test2("7.txt")
-    test2("hello.html.gz")
-    test2("hello.html")
-    test2("neuro-head-ball.jpg")
-    test2("screenshot-45.519.jpg")
+    for (const name of fs.readdirSync(inputDir)) {
+        test2(name)
+    }
 }
 
 // test esm

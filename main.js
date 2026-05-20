@@ -1,4 +1,4 @@
-//@ts-nocheck
+let _textDecoder
 
 export class EncodeResult {
     /**
@@ -7,22 +7,25 @@ export class EncodeResult {
     constructor(bytes) {
         this.bytes = bytes
     }
-    toString() {
-        return new TextDecoder().decode(this.bytes)
-    }
     toJSTemplateLiterals() {
         return `\`${this.toString().replace(
             /[\r\\`]|\$\{|<\/script/g,
             (match) => (
-                match == '\r'
+                match === '\r'
                     ? '\\r'
-                    : match == '</script'
+                    : match === '</script'
                         ? '<\\/script'
                         : '\\' + match
             )
         )}\``
     }
 }
+
+EncodeResult.prototype.toString = (
+    typeof Buffer == 'function' && Buffer.prototype && typeof Buffer.prototype.latin1Slice == 'function'
+        ? function () { return Buffer.prototype.latin1Slice.call(this.bytes) }
+        : function () { return (_textDecoder || (_textDecoder = new TextDecoder)).decode(this.bytes) }
+)
 
 /**
  * @param {Uint8Array} input
