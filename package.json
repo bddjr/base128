@@ -10,7 +10,7 @@
     "main.d.ts"
   ],
   "scripts": {
-    "test": "es-check es6 --checkFeatures --module main.js && node scripts/test.mjs",
+    "test": "es-check es6 --checkFeatures --module main.js && tsc && node scripts/test.mjs",
     "prepublishOnly": "node --run test"
   },
   "repository": {
@@ -28,6 +28,7 @@
     "btoa"
   ],
   "devDependencies": {
-    "es-check": "^9.5.3"
+    "es-check": "^9.5.3",
+    "typescript": "^6.0.3"
   }
 }

@@ -42,9 +42,13 @@ function test(base128) {
         if (enableOutput)
             fs.writeFileSync(`${outputDir}/${name}.js`, encodedTemplate)
 
-        const euqeval = eval(encodedTemplate)
+        console.time('time eval')
+        const euqeval = (0, eval)(encodedTemplate)
+        console.timeEnd('time eval')
         // console.log('eval length:', euqeval.length)
+        console.time('time decode')
         const decoded = base128.decode(euqeval)
+        console.timeEnd('time decode')
         // console.log('decoded length:', decoded.length)
         // euqal?
         const isEqual = file.equals(decoded);
@@ -58,8 +62,9 @@ function test(base128) {
         console.log('encoded length:', Math.ceil(file.length / 3) * 4)
     }
 
+    test2('50MB.txt')
     for (const name of fs.readdirSync(inputDir)) {
-        test2(name)
+        if (name != '50MB.txt') test2(name)
     }
 }
 
