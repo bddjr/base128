@@ -30,12 +30,19 @@ function test(base128) {
         console.log()
 
         console.log('base128:')
+
         console.time('time encode')
         const result = base128.encode(file)
         console.timeEnd('time encode')
+
+        console.time('time toString')
+        const encodedString = result.toString()
+        console.timeEnd('time toString')
+
         console.time('time toJSTemplateLiterals')
-        const encodedTemplate = result.toJSTemplateLiterals()
+        const encodedTemplate = result.toJSTemplateLiterals.call(encodedString)
         console.timeEnd('time toJSTemplateLiterals')
+
         // console.log(euq)
         console.log('toJSTemplateLiterals length:', encodedTemplate.length)
 
@@ -62,9 +69,9 @@ function test(base128) {
         console.log('encoded length:', Math.ceil(file.length / 3) * 4)
     }
 
-    test2('50MB.txt')
+    test2('50MB')
     for (const name of fs.readdirSync(inputDir)) {
-        if (name != '50MB.txt') test2(name)
+        if (name != '50MB') test2(name)
     }
 }
 

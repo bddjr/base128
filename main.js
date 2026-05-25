@@ -19,7 +19,11 @@ export class EncodeResult {
     }
 }
 
-if (typeof Buffer == 'function' && Buffer.prototype && typeof Buffer.prototype.latin1Slice == 'function') {
+if (
+    typeof Buffer == 'function' &&
+    Buffer.prototype &&
+    typeof Buffer.prototype.latin1Slice == 'function'
+) {
     EncodeResult.prototype.toString = function () {
         return Buffer.prototype.latin1Slice.call(this.bytes)
     }
@@ -73,9 +77,8 @@ export function decode(input) {
         //     0        1        2        3        4        5        6        7
         // in  _0000000 _1111111 _2222222 _3333333 _4444444 _5555555 _6666666 _7777777
         // out 00000001 11111122 22222333 33334444 44455555 55666666 67777777
-        for (next(), k = 7; k;) {
-            out[oi++] = cache << 7 - --k | next() >> k
-        }
+        k || next(k = 7)
+        out[oi++] = cache << 8 - k | next() >> --k
     }
     return out
 }
