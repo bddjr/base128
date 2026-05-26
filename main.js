@@ -8,6 +8,7 @@ let _bytesToStr = (
     )
         ? (bytes) => Buffer.prototype.latin1Slice.call(bytes)
         : (bytes) => {
+            // TextDecoder keeps the default UTF-8, which is already the fastest.
             const td = new TextDecoder
             return (_bytesToStr = (bytes) => td.decode(bytes))(bytes)
         }
