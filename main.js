@@ -3,6 +3,7 @@ let _bytesToStr = (bytes) => {
         typeof Buffer == 'function' &&
         Buffer.prototype &&
         typeof Buffer.prototype.latin1Slice == 'function' &&
+        // Exclude Deno. See https://github.com/bddjr/base128/pull/4
         typeof Deno == 'undefined'
     ) return (_bytesToStr = (bytes) => Buffer.prototype.latin1Slice.call(bytes))(bytes)
     const td = new TextDecoder
