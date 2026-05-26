@@ -1,14 +1,17 @@
-let _bytesToStr = (bytes) => {
-    if (
+let _bytesToStr = (
+    (
         typeof Buffer == 'function' &&
         Buffer.prototype &&
         typeof Buffer.prototype.latin1Slice == 'function' &&
         // Exclude Deno. See https://github.com/bddjr/base128/pull/4
         typeof Deno == 'undefined'
-    ) return (_bytesToStr = (bytes) => Buffer.prototype.latin1Slice.call(bytes))(bytes)
-    const td = new TextDecoder
-    return (_bytesToStr = (bytes) => td.decode(bytes))(bytes)
-}
+    )
+        ? (bytes) => Buffer.prototype.latin1Slice.call(bytes)
+        : (bytes) => {
+            const td = new TextDecoder
+            return (_bytesToStr = (bytes) => td.decode(bytes))(bytes)
+        }
+)
 
 export class EncodeResult {
     /**
