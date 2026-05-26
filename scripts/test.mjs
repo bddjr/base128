@@ -1,7 +1,7 @@
 //@ts-check
 
 import base128 from "../main.js";
-import fs from "fs"
+import fs from "node:fs"
 
 const enableOutput = false
 

@@ -1,9 +1,28 @@
+let _bytesToStr = (
+    (
+        typeof Buffer == 'function' &&
+        Buffer.prototype &&
+        typeof Buffer.prototype.latin1Slice == 'function' &&
+        // Exclude Deno. See https://github.com/bddjr/base128/pull/4
+        typeof Deno == 'undefined'
+    )
+        ? (bytes) => Buffer.prototype.latin1Slice.call(bytes)
+        : (bytes) => {
+            // TextDecoder keeps the default UTF-8, which is already the fastest.
+            const td = new TextDecoder
+            return (_bytesToStr = (bytes) => td.decode(bytes))(bytes)
+        }
+)
+
 export class EncodeResult {
     /**
      * @param {Uint8Array<ArrayBuffer>} bytes 
      */
     constructor(bytes) {
         this.bytes = bytes
+    }
+    toString() {
+        return _bytesToStr(this.bytes)
     }
     toJSTemplateLiterals() {
         return `\`${this.toString().replace(
@@ -16,21 +35,6 @@ export class EncodeResult {
                         : '\\' + match
             )
         )}\``
-    }
-}
-
-if (
-    typeof Buffer == 'function' &&
-    Buffer.prototype &&
-    typeof Buffer.prototype.latin1Slice == 'function'
-) {
-    EncodeResult.prototype.toString = function () {
-        return Buffer.prototype.latin1Slice.call(this.bytes)
-    }
-} else {
-    let _textDecoder
-    EncodeResult.prototype.toString = function () {
-        return (_textDecoder || (_textDecoder = new TextDecoder)).decode(this.bytes)
     }
 }
 
