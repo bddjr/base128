@@ -1,9 +1,23 @@
+let _bytesToStr = (bytes) => {
+    if (
+        typeof Buffer == 'function' &&
+        Buffer.prototype &&
+        typeof Buffer.prototype.latin1Slice == 'function' &&
+        typeof Deno == 'undefined'
+    ) return (_bytesToStr = (bytes) => Buffer.prototype.latin1Slice.call(bytes))(bytes)
+    const td = new TextDecoder
+    return (_bytesToStr = (bytes) => td.decode(bytes))(bytes)
+}
+
 export class EncodeResult {
     /**
      * @param {Uint8Array<ArrayBuffer>} bytes 
      */
     constructor(bytes) {
         this.bytes = bytes
+    }
+    toString() {
+        return _bytesToStr(this.bytes)
     }
     toJSTemplateLiterals() {
         return `\`${this.toString().replace(
@@ -16,21 +30,6 @@ export class EncodeResult {
                         : '\\' + match
             )
         )}\``
-    }
-}
-
-if (
-    typeof Buffer == 'function' &&
-    Buffer.prototype &&
-    typeof Buffer.prototype.latin1Slice == 'function'
-) {
-    EncodeResult.prototype.toString = function () {
-        return Buffer.prototype.latin1Slice.call(this.bytes)
-    }
-} else {
-    let _textDecoder
-    EncodeResult.prototype.toString = function () {
-        return (_textDecoder || (_textDecoder = new TextDecoder)).decode(this.bytes)
     }
 }
 
