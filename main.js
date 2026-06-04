@@ -11,7 +11,7 @@ let _bytesToStr = (
                     Buffer.prototype.latin1Slice.call(0)
                 } catch (e) {
                     // Deno >= 2.8.2
-                    // https://github.com/denoland/deno/pull/34503
+                    // https://github.com/bddjr/base128/pull/5
                     return (_bytesToStr = (bytes) => Buffer.prototype.latin1Slice.call(bytes))(bytes)
                 }
                 // Deno < 2.8.2
