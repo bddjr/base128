@@ -12,6 +12,7 @@ let _bytesToStr = (
                     Buffer.prototype.latin1Slice.call(0)
                 } catch (e) {
                     // Deno >= 2.8.2
+                    // Uncaught TypeError: expected ArrayBufferView
                     return (_bytesToStr = (bytes) => Buffer.prototype.latin1Slice.call(bytes))(bytes)
                 }
                 // Deno < 2.8.2
