@@ -2,11 +2,22 @@ let _bytesToStr = (
     (
         typeof Buffer == 'function' &&
         Buffer.prototype &&
-        typeof Buffer.prototype.latin1Slice == 'function' &&
-        // Exclude Deno. See https://github.com/bddjr/base128/pull/4
-        typeof Deno == 'undefined'
+        typeof Buffer.prototype.latin1Slice == 'function'
     )
-        ? (bytes) => Buffer.prototype.latin1Slice.call(bytes)
+        ? typeof Deno == 'undefined'
+            ? (bytes) => Buffer.prototype.latin1Slice.call(bytes)
+            : (bytes) => {
+                try {
+                    Buffer.prototype.latin1Slice.call(0)
+                } catch (e) {
+                    // Deno >= 2.8.2
+                    // https://github.com/denoland/deno/pull/34503
+                    return (_bytesToStr = (bytes) => Buffer.prototype.latin1Slice.call(bytes))(bytes)
+                }
+                // Deno < 2.8.2
+                const td = new TextDecoder
+                return (_bytesToStr = (bytes) => td.decode(bytes))(bytes)
+            }
         : (bytes) => {
             // TextDecoder keeps the default UTF-8, which is already the fastest.
             const td = new TextDecoder
