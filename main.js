@@ -7,11 +7,11 @@ let _bytesToStr = (
         ? typeof Deno == 'undefined'
             ? (bytes) => Buffer.prototype.latin1Slice.call(bytes)
             : (bytes) => {
+                // https://github.com/bddjr/base128/pull/5
                 try {
                     Buffer.prototype.latin1Slice.call(0)
                 } catch (e) {
                     // Deno >= 2.8.2
-                    // https://github.com/bddjr/base128/pull/5
                     return (_bytesToStr = (bytes) => Buffer.prototype.latin1Slice.call(bytes))(bytes)
                 }
                 // Deno < 2.8.2
