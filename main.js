@@ -1,3 +1,4 @@
+/** @type {(bytes: Uint8Array) => string} */
 let _bytesToStr = (
     (
         typeof Buffer == 'function' &&
@@ -26,10 +27,17 @@ let _bytesToStr = (
         }
 )
 
+const _replacer = (match) => {
+    switch (match) {
+        case '\r': return '\\r';
+        case '\\': return '\\\\';
+        case '`': return '\\`';
+        case '${': return '\\${';
+        default: return '<\\/script';
+    }
+}
+
 export class EncodeResult {
-    /**
-     * @param {Uint8Array<ArrayBuffer>} bytes 
-     */
     constructor(bytes) {
         this.bytes = bytes
     }
@@ -39,13 +47,7 @@ export class EncodeResult {
     toJSTemplateLiterals() {
         return `\`${this.toString().replace(
             /[\r\\`]|\$\{|<\/script/g,
-            (match) => (
-                match === '\r'
-                    ? '\\r'
-                    : match === '</script'
-                        ? '<\\/script'
-                        : '\\' + match
-            )
+            _replacer
         )}\``
     }
 }
