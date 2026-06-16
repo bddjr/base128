@@ -1,6 +1,6 @@
 {
   "name": "base128-ascii",
-  "version": "5.0.5",
+  "version": "5.0.6",
   "author": "bddjr",
   "license": "Unlicense",
   "type": "module",
@@ -10,10 +10,11 @@
     "main.d.ts"
   ],
   "scripts": {
-    "test": "es-check es6 --checkFeatures --module main.js && tsc && node scripts/test.mjs",
-    "test:deno": "deno run --allow-read=. --allow-write=. scripts/test.mjs",
+    "check": "es-check es6 --checkFeatures --module main.js && tsc",
+    "test": "npm run check && node scripts/test.mjs",
+    "test:deno": "deno run --allow-all scripts/test.mjs",
     "test:bun": "bun scripts/test.mjs",
-    "prepublishOnly": "node --run test"
+    "prepublishOnly": "npm test"
   },
   "repository": {
     "type": "git",
