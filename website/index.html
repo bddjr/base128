@@ -5,7 +5,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>base128-ascii</title>
+    <link rel="preload" as="font" href="./SegoeUISymbol-ControlCharFont.woff2">
+    <link rel="modulepreload" href="./base128.js">
     <style>
+        @font-face {
+            font-family: 'ControlCharFont';
+            src: url("./SegoeUISymbol-ControlCharFont.woff2");
+            unicode-range: U+0-1F, U+7F;
+        }
+
         * {
             color-scheme: light dark;
             box-sizing: border-box;
@@ -29,6 +37,11 @@
             width: 100%;
             min-height: 100px;
             resize: vertical;
+            font-family: 'ControlCharFont', 'JetBrains Mono', Consolas, 'Courier New', monospace, system-ui;
+            font-size: 16px;
+            white-space: pre-wrap;
+            tab-size: 4;
+            min-height: 200px;
         }
 
         button {
