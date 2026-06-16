@@ -40,3 +40,30 @@ jobs:
           bun-version: latest
 
       - run: bun test:bun
+
+  deploy:
+    if: github.event_name == 'push' && github.ref_name == 'main'
+    needs: test
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+
+    permissions:
+      pages: write
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - run: cp -f main.js website/base128.js
+
+      - name: Upload static files as artifact
+        id: deployment
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: website
+
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v5

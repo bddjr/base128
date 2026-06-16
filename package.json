@@ -20,6 +20,7 @@
     "type": "git",
     "url": "git+https://github.com/bddjr/base128.git"
   },
+  "homepage": "https://bddjr.github.io/base128/",
   "keywords": [
     "base128",
     "base64",
