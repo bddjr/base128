@@ -49,10 +49,18 @@
             font-size: 14px;
         }
 
+        input[type=file] {
+            background: rgb(128, 128, 128, .3);
+            width: 100%;
+            padding: 10px;
+        }
+
         body:has(#select-mode-encode:checked) #main-decode,
         body:has(#select-mode-decode:checked) #main-encode,
         body:has(#encode-input-type-text:checked) #encode-input-file,
         body:has(#encode-input-type-file:checked) #encode-input,
+        body:has(#decode-input-type-text:checked) #decode-input-file,
+        body:has(#decode-input-type-file:checked) #decode-input,
         body:has(#decode-output-type-text:checked) #decode-output-div-file,
         body:has(#decode-output-type-file:checked) #decode-output-div-text {
             display: none;
@@ -100,16 +108,28 @@
             <textarea id="encode-output" readonly disabled></textarea>
         </div>
         <div id="main-decode">
+            <p>input type:</p>
+            <form id="decode-input-type">
+                <div>
+                    <input checked type="radio" name="input" id="decode-input-type-text" value="text">
+                    <label for="decode-input-type-text">text (UTF-8)</label>
+                </div>
+                <div>
+                    <input type="radio" name="input" id="decode-input-type-file" value="file">
+                    <label for="decode-input-type-file">file</label>
+                </div>
+            </form>
             <p>input JSTemplateLiterals:</p>
             <textarea id="decode-input">`$-Fc<@w7\\MF!`</textarea>
+            <input type="file" id="decode-input-file" accept=".js">
             <p>output type:</p>
             <form id="decode-output-type">
                 <div>
-                    <input checked type="radio" name="input" id="decode-output-type-text" value="text">
+                    <input type="radio" name="input" id="decode-output-type-text" value="text">
                     <label for="decode-output-type-text">text (UTF-8)</label>
                 </div>
                 <div>
-                    <input type="radio" name="input" id="decode-output-type-file" value="file">
+                    <input checked type="radio" name="input" id="decode-output-type-file" value="file">
                     <label for="decode-output-type-file">file</label>
                 </div>
             </form>
@@ -145,6 +165,15 @@
             fr.readAsArrayBuffer(new Blob([file]))
             return new Promise((resolve, reject) => {
                 fr.onload = () => resolve(new Uint8Array(fr.result))
+                fr.onerror = () => reject(fr.error)
+            })
+        }
+
+        const readFileToText = (file) => {
+            const fr = new FileReader
+            fr.readAsText(new Blob([file]))
+            return new Promise((resolve, reject) => {
+                fr.onload = () => resolve(fr.result)
                 fr.onerror = () => reject(fr.error)
             })
         }
@@ -204,21 +233,40 @@
             outputDownloadButton.disabled = false
         }
         {
+            const inputTypeElem = document.getElementById("decode-input-type")
             const inputElem = document.getElementById("decode-input")
+            const inputFileElem = document.getElementById("decode-input-file")
             const outputTypeElem = document.getElementById("decode-output-type")
             const outputElem = document.getElementById("decode-output")
             const outputCopyButton = document.getElementById("decode-output-copy")
             const outputFileDownloadButton = document.getElementById("decode-output-file-download")
-            const oninput = () => {
+            const getInputValue = async () => {
+                const inputType = inputTypeElem.input.value;
+                let inputValue;
+                if (inputType === 'text') {
+                    inputValue = inputElem.value
+                } else if (inputType === 'file') {
+                    const files = inputFileElem.files
+                    if (files.length) {
+                        inputValue = await readFileToText(files[0])
+                    } else inputValue = '``';
+                } else throw Error(`unknown input type "${inputType}"`);
+                return inputValue
+            }
+            const decode = async () => {
+                const inputValue = await getInputValue();
+                const input = sandboxEval(inputValue)
+                return base128.decode(input)
+            }
+            const oninput = async () => {
                 try {
                     const outputType = outputTypeElem.input.value;
                     if (outputType === 'text') {
                         outputCopyButton.disabled = true
                         outputElem.disabled = true
                         outputElem.value = outputWaitAMinute
-                        const input = sandboxEval(inputElem.value)
-                        const out = base128.decode(input)
-                        outputElem.value = textDecoder.decode(out)
+                        const outBytes = await decode()
+                        outputElem.value = textDecoder.decode(outBytes)
                         outputCopyButton.disabled = false
                         outputElem.disabled = false
                     } else if (outputType === 'file') {
@@ -229,15 +277,16 @@
                     outputElem.value = e
                 }
             }
+            inputTypeElem.oninput = oninput;
             inputElem.oninput = oninput;
+            inputFileElem.oninput = oninput;
             outputTypeElem.oninput = oninput;
             oninput();
-            outputFileDownloadButton.onclick = () => {
+            outputFileDownloadButton.onclick = async () => {
                 try {
                     outputFileDownloadButton.disabled = true
-                    const input = sandboxEval(inputElem.value)
-                    const out = base128.decode(input)
-                    downloadFromBlob(new Blob([out], { type: 'application/octet-stream' }))
+                    const outBytes = await decode()
+                    downloadFromBlob(new Blob([outBytes], { type: 'application/octet-stream' }))
                 } catch (e) {
                     console.error(e)
                     alert(e)
