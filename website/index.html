@@ -93,8 +93,9 @@
             <p>input:</p>
             <textarea id="encode-input">Hello world!</textarea>
             <input type="file" id="encode-input-file">
-            <p>toJSTemplateLiterals: &nbsp; <button type="button" copy="encode-output" id="encode-output-copy"
-                    disabled>Copy</button>
+            <p>toJSTemplateLiterals:
+                &nbsp; <button type="button" copy="encode-output" id="encode-output-copy" disabled>Copy</button>
+                &nbsp; <button type="button" id="encode-output-download" disabled>Download</button>
             </p>
             <textarea id="encode-output" readonly disabled></textarea>
         </div>
@@ -113,8 +114,8 @@
                 </div>
             </form>
             <div id="decode-output-div-text">
-                <p>output: &nbsp; <button type="button" copy="decode-output" id="decode-output-copy"
-                        disabled>Copy</button>
+                <p>output:
+                    &nbsp; <button type="button" copy="decode-output" id="decode-output-copy" disabled>Copy</button>
                 </p>
                 <textarea id="decode-output" readonly disabled></textarea>
             </div>
@@ -148,16 +149,31 @@
             })
         }
 
+        const downloadFromBlob = (blob) => {
+            const bloburl = URL.createObjectURL(blob)
+            const a = document.createElement('a')
+            a.href = bloburl
+            a.download = ''
+            a.click()
+            URL.revokeObjectURL(bloburl)
+        }
+
+        const textToClipboardText = (text) => text.replaceAll('\0', '\ufffd')
+
         {
             const inputTypeElem = document.getElementById("encode-input-type")
             const inputElem = document.getElementById("encode-input")
             const inputFileElem = document.getElementById("encode-input-file")
             const outputElem = document.getElementById("encode-output")
             const outputCopyButton = document.getElementById("encode-output-copy")
+            const outputDownloadButton = document.getElementById("encode-output-download")
+            let outputValue = ''
             const oninput = async () => {
                 try {
                     outputCopyButton.disabled = true
                     outputElem.disabled = true
+                    outputDownloadButton.disabled = true
+                    outputValue = ''
                     outputElem.value = outputWaitAMinute
                     const inputType = inputTypeElem.input.value;
                     let inputValue;
@@ -169,9 +185,10 @@
                             inputValue = await readFileToBytes(files[0])
                         } else inputValue = '';
                     } else throw Error(`unknown input type "${inputType}"`);
-                    outputElem.value = base128.encode(inputValue).toJSTemplateLiterals()
+                    outputElem.value = outputValue = base128.encode(inputValue).toJSTemplateLiterals()
                     outputCopyButton.disabled = false
                     outputElem.disabled = false
+                    outputDownloadButton.disabled = false
                 } catch (e) {
                     console.error(e)
                     outputElem.value = e
@@ -181,6 +198,10 @@
             inputElem.oninput = oninput;
             inputFileElem.oninput = oninput;
             oninput();
+            outputDownloadButton.onclick = () => {
+                downloadFromBlob(new Blob([outputValue], { type: 'text/javascript' }))
+            }
+            outputDownloadButton.disabled = false
         }
         {
             const inputElem = document.getElementById("decode-input")
@@ -211,47 +232,52 @@
             inputElem.oninput = oninput;
             outputTypeElem.oninput = oninput;
             oninput();
-            const download = () => {
+            outputFileDownloadButton.onclick = () => {
                 try {
                     outputFileDownloadButton.disabled = true
                     const input = sandboxEval(inputElem.value)
                     const out = base128.decode(input)
-                    const bloburl = URL.createObjectURL(new Blob([out], { type: 'application/octet-stream' }))
-                    const a = document.createElement('a')
-                    a.href = bloburl
-                    a.download = ''
-                    a.click()
-                    URL.revokeObjectURL(bloburl)
+                    downloadFromBlob(new Blob([out], { type: 'application/octet-stream' }))
                 } catch (e) {
                     console.error(e)
                     alert(e)
                 }
                 outputFileDownloadButton.disabled = false
-            }
-            outputFileDownloadButton.onclick = download;
+            };
             outputFileDownloadButton.disabled = false
         }
         {
             const copyButtonDefaultInnerHTML = 'Copy'
             for (const e of document.querySelectorAll('button[copy]')) {
-                const textElem = document.getElementById(e.getAttribute('copy'))
                 e.innerHTML = copyButtonDefaultInnerHTML
                 let timeoutId = null
                 e.onclick = async () => {
                     try {
                         if (timeoutId !== null) clearTimeout(timeoutId);
-                        await navigator.clipboard.writeText(textElem.value);
+                        const textElem = document.getElementById(e.getAttribute('copy'))
+                        await navigator.clipboard.writeText(textToClipboardText(textElem.value))
                         e.innerHTML = '✅ Copied!'
                         timeoutId = setTimeout(() => {
                             timeoutId = null
                             e.innerHTML = copyButtonDefaultInnerHTML
                         }, 2000)
                     } catch (e) {
+                        console.error(e)
                         alert(e)
                         e.innerHTML = copyButtonDefaultInnerHTML
                     }
                 }
             }
+        }
+        for (const textarea of document.getElementsByTagName('textarea')) {
+            textarea.addEventListener('copy', (e) => {
+                const start = textarea.selectionStart;
+                const end = textarea.selectionEnd;
+                if (start === end) return;
+                const selectedText = textarea.value.slice(start, end);
+                e.preventDefault();
+                e.clipboardData.setData('text/plain', textToClipboardText(selectedText));
+            });
         }
     </script>
 </body>
