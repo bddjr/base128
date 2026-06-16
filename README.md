@@ -30,12 +30,12 @@ screenshot-45.519.jpg
 file length: 682086
 
 base128:
-time encode: 7.074ms
-time toString: 0.187ms
-time toJSTemplateLiterals: 1.884ms
+time encode: 8.742ms
+time toString: 2.279ms
+time toJSTemplateLiterals: 13.645ms
 toJSTemplateLiterals length: 796961
-time eval: 6.271ms
-time decode: 3.186ms
+time eval: 5.98ms
+time decode: 5.857ms
 equal: true
 
 base64:
@@ -49,12 +49,12 @@ Encode `50MB` file, use base128 is `8180525 Bytes` smaller than base64:
 file length: 50000000
 
 base128:
-time encode: 68.032ms
-time toString: 10.238ms
-time toJSTemplateLiterals: 162.134ms
+time encode: 70.423ms
+time toString: 9.012ms
+time toJSTemplateLiterals: 150.798ms
 toJSTemplateLiterals length: 58486143
-time eval: 1.044s
-time decode: 183.296ms
+time eval: 1.051s
+time decode: 183.591ms
 equal: true
 
 base64:

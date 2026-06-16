@@ -11,10 +11,10 @@
   ],
   "scripts": {
     "check": "es-check es6 --checkFeatures --module main.js && tsc",
-    "test": "npm run check && node scripts/test.mjs",
+    "test": "node --run check && node scripts/test.mjs",
     "test:deno": "deno run --allow-all scripts/test.mjs",
     "test:bun": "bun scripts/test.mjs",
-    "prepublishOnly": "npm test"
+    "prepublishOnly": "node --run test"
   },
   "repository": {
     "type": "git",
