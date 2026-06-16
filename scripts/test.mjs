@@ -69,14 +69,10 @@ function test(base128) {
         console.log('encoded length:', Math.ceil(file.length / 3) * 4)
     }
 
-    /**
-     * @param {string} p
-     */
-    const getSizeFromPath = (p) => fs.statSync(inputDir + '/' + p).size
-    const ls = fs.readdirSync(inputDir).sort((a, b) => getSizeFromPath(b) - getSizeFromPath(a))
-    for (const name of ls) {
-        test2(name)
-    }
+    fs.readdirSync(inputDir)
+        .map(name => ({ name, size: fs.statSync(inputDir + '/' + name).size }))
+        .sort((a, b) => b.size - a.size)
+        .forEach(v => test2(v.name))
 }
 
 // test esm
