@@ -152,6 +152,7 @@
     <script type="module">
         import base128 from './base128.js';
         self.base128 = base128
+
         const textEncoder = new TextEncoder
         const textDecoder = new TextDecoder
         const outputWaitAMinute = 'Wait a minute...'
@@ -162,6 +163,8 @@
             iframe.remove()
             return f
         })(document.getElementById("sandbox"))
+
+        self.sandboxEval = sandboxEval
 
         const readFileToBytes = (file) => {
             const fr = new FileReader
