@@ -223,11 +223,16 @@
             for (const e of document.querySelectorAll('button[copy]')) {
                 const textElem = document.getElementById(e.getAttribute('copy'))
                 e.innerHTML = copyButtonDefaultInnerHTML
+                let timeoutId = null
                 e.onclick = async () => {
                     try {
+                        if (timeoutId !== null) clearTimeout(timeoutId);
                         await navigator.clipboard.writeText(textElem.value);
                         e.innerHTML = '✅ Copied!'
-                        setTimeout(() => e.innerHTML = copyButtonDefaultInnerHTML, 2000)
+                        timeoutId = setTimeout(() => {
+                            timeoutId = null
+                            e.innerHTML = copyButtonDefaultInnerHTML
+                        }, 2000)
                     } catch (e) {
                         alert(e)
                         e.innerHTML = copyButtonDefaultInnerHTML
