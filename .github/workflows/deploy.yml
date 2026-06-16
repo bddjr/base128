@@ -57,7 +57,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - run: cp -f main.js website/base128.js
+      # - run: |
+      #     rm -f website/base128.js
+      #     cp main.js website/base128.js
 
       - name: Upload static files as artifact
         id: deployment
