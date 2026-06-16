@@ -1,6 +1,6 @@
 Smaller than base64, only use ASCII, can run in web browser.
 
-Build for [vite-plugin-singlefile-compression](https://github.com/bddjr/vite-plugin-singlefile-compression)
+Build for [vite-plugin-singlefile-compression](https://bddjr.github.io/vite-plugin-singlefile-compression/#/)
 
 Preview: https://bddjr.github.io/base128/
 
