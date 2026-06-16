@@ -69,9 +69,13 @@ function test(base128) {
         console.log('encoded length:', Math.ceil(file.length / 3) * 4)
     }
 
-    test2('50MB')
-    for (const name of fs.readdirSync(inputDir)) {
-        if (name != '50MB') test2(name)
+    /**
+     * @param {string} p
+     */
+    const getSizeFromPath = (p) => fs.statSync(inputDir + '/' + p).size
+    const ls = fs.readdirSync(inputDir).sort((a, b) => getSizeFromPath(b) - getSizeFromPath(a))
+    for (const name of ls) {
+        test2(name)
     }
 }
 
