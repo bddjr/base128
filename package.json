@@ -2,6 +2,7 @@
   "name": "base128-ascii",
   "version": "5.0.6",
   "author": "bddjr",
+  "description": "Smaller than base64, only use ASCII, can run in web browser.",
   "license": "Unlicense",
   "type": "module",
   "main": "./main.js",
