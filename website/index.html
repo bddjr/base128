@@ -512,7 +512,7 @@
                     outputElem.value = outputWaitAMinute
                     const inputValue = await getInputValue()
                     outputValue = base128.encode(inputValue).toJSTemplateLiterals()
-                    // 体积达到 500KB 自动隐藏，以此优化性能
+                    // 字符数量达到 500K 自动隐藏，以此优化性能
                     if (outputValue.length >= 500000) outputDisplayButton.checked = false;
                     outputElem.value = outputValue
                     outputElem.disabled = false
