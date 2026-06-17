@@ -52,15 +52,44 @@
         }
 
         button {
+            cursor: pointer;
             line-height: 20px;
             font-size: 14px;
+        }
+
+        button:disabled {
+            cursor: default;
         }
 
         input[type=file] {
             border: 1px solid rgb(118, 118, 118);
             border-radius: 4px;
             width: 100%;
-            padding: 10px;
+            padding: 16px;
+            cursor: pointer;
+        }
+
+        input[type=file]::file-selector-button {
+            margin-right: 8px;
+            cursor: pointer;
+        }
+
+        label[radio] {
+            cursor: pointer;
+            line-height: 24px;
+            display: inline-flex;
+            gap: 6px;
+            padding: 2px 6px;
+            align-items: center;
+        }
+
+        label[radio] input {
+            cursor: pointer;
+            margin: 0;
+        }
+
+        .form-title {
+            margin-bottom: 8px;
         }
 
         body:has(#select-mode-encode:checked) #main-decode,
@@ -97,69 +126,67 @@
             Error: Please allow JavaScript then reload page.
         </noscript>
         <div hide-if-noscript>
-            <p>mode:</p>
-            <form id="select-mode">
-                <div>
+            <p class="form-title">mode:</p>
+            <form radio id="select-mode">
+                <label radio for="select-mode-encode">
                     <input checked type="radio" name="input" id="select-mode-encode" value="encode">
-                    <label for="select-mode-encode">encode</label>
-                </div>
-                <div>
+                    encode
+                </label>
+                <label radio for="select-mode-decode">
                     <input type="radio" name="input" id="select-mode-decode" value="decode">
-                    <label for="select-mode-decode">decode</label>
-                </div>
+                    decode
+                </label>
             </form>
             <div id="main-encode">
-                <p>input type:</p>
-                <form id="encode-input-type">
-                    <div>
+                <p class="form-title">input type:</p>
+                <form radio id="encode-input-type">
+                    <label radio for="encode-input-type-text">
                         <input checked type="radio" name="input" id="encode-input-type-text" value="text">
-                        <label for="encode-input-type-text">text (UTF-8)</label>
-                    </div>
-                    <div>
+                        text (UTF-8)
+                    </label>
+                    <label radio for="encode-input-type-file">
                         <input type="radio" name="input" id="encode-input-type-file" value="file">
-                        <label for="encode-input-type-file">file</label>
-                    </div>
+                        file
+                    </label>
                 </form>
-                <p>input:</p>
+                <p class="form-title">input:</p>
                 <textarea id="encode-input">Hello world!</textarea>
                 <input type="file" id="encode-input-file">
-                <p>toJSTemplateLiterals:
+                <p class="form-title">toJSTemplateLiterals:
                     &nbsp; <button type="button" id="encode-output-download" disabled>Download</button>
                 </p>
                 <textarea id="encode-output" readonly disabled></textarea>
             </div>
             <div id="main-decode">
-                <p>input type:</p>
-                <form id="decode-input-type">
-                    <div>
+                <p class="form-title">input type:</p>
+                <form radio id="decode-input-type">
+                    <label radio for="decode-input-type-text">
                         <input type="radio" name="input" id="decode-input-type-text" value="text">
-                        <label for="decode-input-type-text">text (UTF-8)</label>
-                    </div>
-                    <div>
+                        text (UTF-8)</label>
+                    <label radio for="decode-input-type-file">
                         <input checked type="radio" name="input" id="decode-input-type-file" value="file">
-                        <label for="decode-input-type-file">file</label>
-                    </div>
+                        file
+                    </label>
                 </form>
-                <p>input JSTemplateLiterals:</p>
+                <p class="form-title">input JSTemplateLiterals:</p>
                 <textarea id="decode-input">`$-Fc<@w7\\MF!`</textarea>
                 <input type="file" id="decode-input-file" accept=".base128jstl">
-                <p>output type:</p>
-                <form id="decode-output-type">
-                    <div>
+                <p class="form-title">output type:</p>
+                <form radio id="decode-output-type">
+                    <label radio for="decode-output-type-text">
                         <input type="radio" name="input" id="decode-output-type-text" value="text">
-                        <label for="decode-output-type-text">text (UTF-8)</label>
-                    </div>
-                    <div>
+                        text (UTF-8)
+                    </label>
+                    <label radio for="decode-output-type-file">
                         <input checked type="radio" name="input" id="decode-output-type-file" value="file">
-                        <label for="decode-output-type-file">file</label>
-                    </div>
+                        file
+                    </label>
                 </form>
+                <p class="form-title">output:</p>
                 <div id="decode-output-div-text">
-                    <p>output:</p>
                     <textarea id="decode-output" readonly disabled></textarea>
                 </div>
                 <div id="decode-output-div-file">
-                    <p>output:</p>
                     <button type="button" id="decode-output-file-download">Download</button>
                 </div>
             </div>
