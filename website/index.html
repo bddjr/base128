@@ -119,7 +119,6 @@
                 <textarea id="encode-input">Hello world!</textarea>
                 <input type="file" id="encode-input-file">
                 <p>toJSTemplateLiterals:
-                    &nbsp; <button type="button" copy="encode-output" id="encode-output-copy" disabled>Copy</button>
                     &nbsp; <button type="button" id="encode-output-download" disabled>Download</button>
                 </p>
                 <textarea id="encode-output" readonly disabled></textarea>
@@ -151,9 +150,7 @@
                     </div>
                 </form>
                 <div id="decode-output-div-text">
-                    <p>output:
-                        &nbsp; <button type="button" copy="decode-output" id="decode-output-copy" disabled>Copy</button>
-                    </p>
+                    <p>output:</p>
                     <textarea id="decode-output" readonly disabled></textarea>
                 </div>
                 <div id="decode-output-div-file">
@@ -451,7 +448,6 @@
             /** @type {HTMLInputElement} */
             const inputFileElem = document.getElementById("encode-input-file")
             const outputElem = document.getElementById("encode-output")
-            const outputCopyButton = document.getElementById("encode-output-copy")
             const outputDownloadButton = document.getElementById("encode-output-download")
             let inputFileName = '';
             let outputValue = ''
@@ -472,14 +468,12 @@
             }
             const oninput = async () => {
                 try {
-                    outputCopyButton.disabled = true
                     outputElem.disabled = true
                     outputDownloadButton.disabled = true
                     outputValue = ''
                     outputElem.value = outputWaitAMinute
                     const inputValue = await getInputValue()
                     outputElem.value = outputValue = base128.encode(inputValue).toJSTemplateLiterals()
-                    outputCopyButton.disabled = false
                     outputElem.disabled = false
                     outputDownloadButton.disabled = false
                 } catch (e) {
@@ -519,7 +513,6 @@
             }
             const outputTypeElem = document.getElementById("decode-output-type")
             const outputElem = document.getElementById("decode-output")
-            const outputCopyButton = document.getElementById("decode-output-copy")
             const outputFileDownloadButton = document.getElementById("decode-output-file-download")
             let inputFileName = '';
             const getInputValue = async () => {
@@ -546,16 +539,19 @@
                 try {
                     const outputType = outputTypeElem.input.value;
                     if (outputType === 'text') {
-                        outputCopyButton.disabled = true
                         outputElem.disabled = true
                         outputElem.value = outputWaitAMinute
                         const outBytes = await decode()
                         outputElem.value = textDecoder.decode(outBytes)
-                        outputCopyButton.disabled = false
                         outputElem.disabled = false
-                    } else if (outputType === 'file') {
+                        return
+                    }
+                    if (outputType === 'file') {
+                        outputElem.value = ''
                         // ignore
-                    } else throw Error(`unknown output type "${outputType}"`)
+                        return
+                    }
+                    throw Error(`unknown output type "${outputType}"`)
                 } catch (e) {
                     console.error(e)
                     outputElem.value = e
@@ -604,30 +600,7 @@
             outputFileDownloadButton.disabled = false
         }
 
-        // copy
-        {
-            const copyButtonDefaultInnerHTML = 'Copy'
-            for (const e of document.querySelectorAll('button[copy]')) {
-                e.innerHTML = copyButtonDefaultInnerHTML
-                let timeoutId = null
-                e.onclick = async () => {
-                    try {
-                        if (timeoutId !== null) clearTimeout(timeoutId);
-                        const textElem = document.getElementById(e.getAttribute('copy'))
-                        await navigator.clipboard.writeText(textToClipboardText(textElem.value))
-                        e.innerHTML = '✅ Copied!'
-                        timeoutId = setTimeout(() => {
-                            timeoutId = null
-                            e.innerHTML = copyButtonDefaultInnerHTML
-                        }, 2000)
-                    } catch (e) {
-                        console.error(e)
-                        alert(e)
-                        e.innerHTML = copyButtonDefaultInnerHTML
-                    }
-                }
-            }
-        }
+        // hijack copy
         for (const textarea of document.getElementsByTagName('textarea')) {
             textarea.addEventListener('copy', (e) => {
                 const start = textarea.selectionStart;
