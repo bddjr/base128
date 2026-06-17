@@ -248,9 +248,9 @@
          * @param {string} input
          */
         const checkJSTemplateLiterals = (input) => {
-            const err = "invalid input"
             if (typeof input != 'string')
-                throw SyntaxError(err);
+                throw TypeError("input must be a string");
+            const err = "invalid input"
             input = input.trim()
             if (input.length < 2)
                 throw SyntaxError(err);
