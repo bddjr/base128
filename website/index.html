@@ -243,7 +243,7 @@
         self.sandboxEval = sandboxEval
 
         /**
-         * 检查输入的模板字符串，防恶意代码。
+         * 检查输入的模板字符串，防恶意代码，防注入死循环。
          * Throw SyntaxError when failed.
          * @param {string} input
          */
