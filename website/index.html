@@ -14,7 +14,7 @@
     <meta name="color-scheme" content="light dark">
     <style>
         @font-face {
-            font-family: 'ControlCharFont';
+            font-family: ControlCharFont;
             src: url("./SegoeUISymbol-ControlCharFont.woff2");
             unicode-range: U+0-1F, U+7F;
         }
@@ -28,7 +28,7 @@
         }
 
         body {
-            font-family: system-ui;
+            font-family: ControlCharFont, system-ui;
             display: flex;
             justify-content: center;
             margin: 24px 16px;
@@ -47,7 +47,7 @@
             width: 100%;
             min-height: 100px;
             resize: vertical;
-            font-family: 'ControlCharFont', 'JetBrains Mono', Consolas, 'Courier New', monospace, system-ui;
+            font-family: ControlCharFont, 'JetBrains Mono', Consolas, 'Courier New', monospace, system-ui;
             font-size: 16px;
             white-space: pre-wrap;
             tab-size: 4;
@@ -227,6 +227,7 @@
         /**
          * 在沙盒里执行eval。
          * 内部无法获取父window，无法发起网络请求，但仍可能执行死循环导致网页卡死。
+         * 注意：执行后需检查输出的类型，避免向内部传递外界的对象、函数等，以防止沙盒逃逸。
          * @type {typeof eval}
          */
         const sandboxEval = (() => {
@@ -234,8 +235,18 @@
             iframe.style.display = 'none'
             document.body.appendChild(iframe)
             const sandboxEval = iframe.contentWindow.eval
-            // 下一步移除iframe，以此防止eval拿到外界权限或发起网络请求。
+
+            /**
+             * After the iframe is removed, as long as the outside world no longer injects objects into the iframe,
+             * scripts inside the iframe cannot access the parent window, initiate network requests, or create child iframes.
+             * This is the core principle of sandboxEval.
+             * 
+             * SAFETY:
+             * Removing the iframe does not prevent subsequent calls to sandboxEval.
+             * Tested and working correctly in Chrome, Edge, Firefox, and Safari.
+             */
             iframe.remove()
+
             return sandboxEval
         })()
 
@@ -243,43 +254,53 @@
         self.sandboxEval = sandboxEval
 
         /**
-         * 检查输入的模板字符串，防恶意代码，防注入死循环。
-         * Throw SyntaxError when failed.
+         * 检查并解析输入的模板字符串，防恶意代码，防注入死循环。
          * @param {string} input
+         * @returns {string}
          */
-        const checkJSTemplateLiterals = (input) => {
+        const parseJSTemplateLiterals = (input) => {
             if (typeof input != 'string')
-                throw TypeError("input must be a string");
-            const err = "invalid input"
+                throw TypeError("parseJSTemplateLiterals: input must be a string");
+            const err = "parseJSTemplateLiterals: invalid input"
             input = input.trim()
             if (input.length < 2)
                 throw SyntaxError(err);
-            if (input.charCodeAt(0) != 96) // '`'
+            if (input.charCodeAt(0) !== 96) // '`'
                 throw SyntaxError(err);
             const loopMaxIndex = input.length - 1;
-            if (input.charCodeAt(loopMaxIndex) != 96) // '`'
+            if (input.charCodeAt(loopMaxIndex) !== 96) // '`'
                 throw SyntaxError(err);
             let i = 1
-            for (; i < loopMaxIndex; i++) {
+            while (i < loopMaxIndex) {
                 switch (input.charCodeAt(i)) {
                     case 92: // '\\'
                         // ignore next char
+                        i += 2
+                        break
+                    case 36: // '$'
+                        // anti '${'
                         i++
+                        if (input.charCodeAt(i) === 123) // '{'
+                            throw SyntaxError(err);
                         break
                     case 96: // '`'
                         throw SyntaxError(err);
-                    case 36: // '$'
-                        // anti '${'
-                        if (input.charCodeAt(i + 1) === 123)
-                            throw SyntaxError(err);
-                        break
+                    default:
+                        i++
                 }
             }
             if (i !== loopMaxIndex)
                 throw SyntaxError(err);
-            // ok
+            const out = sandboxEval(input)
+            if (typeof out != 'string')
+                throw SyntaxError(err);
+            return out
         }
 
+        /**
+         * @param {File} file
+         * @returns {Promise<Uint8Array<ArrayBuffer>>}
+         */
         const readFileToBytes = (file) => {
             const fr = new FileReader
             fr.readAsArrayBuffer(new Blob([file]))
@@ -289,6 +310,10 @@
             })
         }
 
+        /**
+         * @param {File} file
+         * @returns {Promise<string>}
+         */
         const readFileToText = (file) => {
             const fr = new FileReader
             fr.readAsText(new Blob([file]))
@@ -620,8 +645,7 @@
             }
             const decode = async () => {
                 const inputValue = await getInputValue();
-                checkJSTemplateLiterals(inputValue)
-                const input = sandboxEval(inputValue)
+                const input = parseJSTemplateLiterals(inputValue)
                 return base128.decode(input)
             }
             const oninput = async () => {
