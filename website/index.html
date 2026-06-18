@@ -28,7 +28,7 @@
         }
 
         body {
-            font-family: ControlCharFont, system-ui;
+            font-family: system-ui;
             display: flex;
             justify-content: center;
             margin: 24px 16px;
@@ -43,11 +43,15 @@
             margin-top: 0;
         }
 
+        textarea,
+        input {
+            font-family: ControlCharFont, 'JetBrains Mono', Consolas, 'Courier New', monospace, system-ui;
+        }
+
         textarea {
             width: 100%;
             min-height: 100px;
             resize: vertical;
-            font-family: ControlCharFont, 'JetBrains Mono', Consolas, 'Courier New', monospace, system-ui;
             font-size: 16px;
             white-space: pre-wrap;
             tab-size: 4;
