@@ -30,7 +30,9 @@
     "encode",
     "decode",
     "atob",
-    "btoa"
+    "btoa",
+    "base128-ascii",
+    "base128jstl"
   ],
   "devDependencies": {
     "es-check": "^9.5.3",
