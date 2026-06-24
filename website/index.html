@@ -720,16 +720,12 @@
         }
 
         // hijack copy
-        for (const textarea of document.getElementsByTagName('textarea')) {
-            textarea.addEventListener('copy', (e) => {
-                const start = textarea.selectionStart;
-                const end = textarea.selectionEnd;
-                if (start === end) return;
-                const selectedText = textarea.value.slice(start, end);
-                e.preventDefault();
-                e.clipboardData.setData('text/plain', textToClipboardText(selectedText));
-            });
-        }
+        document.body.addEventListener('copy', (event) => {
+            const selection = self.getSelection()
+            const selectedText = selection.toString();
+            event.preventDefault();
+            event.clipboardData.setData('text/plain', textToClipboardText(selectedText));
+        });
     </script>
 </body>
 
