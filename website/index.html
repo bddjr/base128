@@ -108,15 +108,15 @@
             margin-bottom: 8px;
         }
 
-        body:has(#select-mode-encode:checked) #main-decode,
-        body:has(#select-mode-decode:checked) #main-encode,
-        body:has(#encode-input-type-text:checked) #encode-input-file,
-        body:has(#encode-input-type-file:checked) #encode-input,
+        body:not(:has(#select-mode-encode:checked)) #main-encode,
+        body:not(:has(#select-mode-decode:checked)) #main-decode,
+        body:not(:has(#encode-input-type-text:checked)) #encode-input,
+        body:not(:has(#encode-input-type-file:checked)) #encode-input-file,
         body:not(:has(#encode-output-display:checked)) #encode-output,
-        body:has(#decode-input-type-text:checked) #decode-input-file,
-        body:has(#decode-input-type-file:checked) #decode-input,
-        body:has(#decode-output-type-text:checked) #decode-output-div-file,
-        body:has(#decode-output-type-file:checked) #decode-output-div-text {
+        body:not(:has(#decode-input-type-text:checked)) #decode-input,
+        body:not(:has(#decode-input-type-file:checked)) #decode-input-file,
+        body:not(:has(#decode-output-type-text:checked)) #decode-output-div-text,
+        body:not(:has(#decode-output-type-file:checked)) #decode-output-div-file {
             display: none;
         }
     </style>
