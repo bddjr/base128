@@ -580,7 +580,7 @@
                 }
                 if (inputType === 'file') {
                     const files = inputFileElem.files
-                    if (files.length == 0) return '';
+                    if (files.length == 0) return new Uint8Array(0);
                     const f = files[0]
                     inputFileName = f.name
                     return readFileToBytes(f)
@@ -647,7 +647,7 @@
                 }
                 if (inputType === 'file') {
                     const files = inputFileElem.files
-                    if (files.length == 0) return '';
+                    if (files.length == 0) return new Uint8Array(0);
                     const f = files[0]
                     inputFileName = f.name
                     return readFileToText(f)
