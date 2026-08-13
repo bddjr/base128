@@ -25,38 +25,38 @@ const decodedBytes = base128.decode(eval(encodedTemplate))
 
 ## Effect
 
-Encode this jpg file, use base128 is `112487 Bytes` smaller than base64:
+Encode this jpg file, use base128 is `104,588 Bytes` smaller than base64:
 
 ```
 screenshot-45.519.jpg
 file length: 682086
 
 base128:
-time encode: 10.177ms
-time toString: 2.107ms
-time toJSTemplateLiterals: 11.586ms
-toJSTemplateLiterals length: 796961
-time eval: 5.97ms
-time decode: 4.436ms
+time encode: 10.296ms
+time toString: 0.244ms
+time toJSTemplateLiterals: 11.763ms
+toJSTemplateLiterals length: 804860
+time eval: 5.963ms
+time decode: 6.246ms
 equal: true
 
 base64:
 encoded length: 909448
 ```
 
-Encode `50MB` file, use base128 is `8180525 Bytes` smaller than base64:
+Encode `50MB` file, use base128 is `7,664,748 Bytes` smaller than base64:
 
 ```
 50MB
 file length: 50000000
 
 base128:
-time encode: 69.156ms
-time toString: 10.252ms
-time toJSTemplateLiterals: 148.9ms
-toJSTemplateLiterals length: 58486143
-time eval: 1.046s
-time decode: 183.151ms
+time encode: 69.265ms
+time toString: 9.311ms
+time toJSTemplateLiterals: 211.551ms
+toJSTemplateLiterals length: 59001920
+time eval: 1.049s
+time decode: 170.828ms
 equal: true
 
 base64:

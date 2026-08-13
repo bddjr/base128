@@ -8,6 +8,9 @@ importers:
 
   .:
     devDependencies:
+      base128-ascii:
+        specifier: 'link:'
+        version: 'link:'
       es-check:
         specifier: ^9.5.3
         version: 9.6.4

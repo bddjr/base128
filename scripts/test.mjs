@@ -1,6 +1,6 @@
 //@ts-check
 
-import base128 from "../main.js";
+import base128 from "base128-ascii";
 import fs from "node:fs"
 
 const enableOutput = false

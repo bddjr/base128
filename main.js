@@ -32,6 +32,17 @@ const _replacer = (match) => {
         case '\r': return '\\r';
         case '\\': return '\\\\';
         case '`': return '\\`';
+        case '\0': return '\\0';
+        case '\x000': return '\\x000';
+        case '\x001': return '\\x001';
+        case '\x002': return '\\x002';
+        case '\x003': return '\\x003';
+        case '\x004': return '\\x004';
+        case '\x005': return '\\x005';
+        case '\x006': return '\\x006';
+        case '\x007': return '\\x007';
+        case '\x008': return '\\x008';
+        case '\x009': return '\\x009';
         case '${': return '\\${';
         default: return '<\\/script';
     }
@@ -46,7 +57,7 @@ export class EncodeResult {
     }
     toJSTemplateLiterals() {
         return `\`${this.toString().replace(
-            /[\r\\`]|\$\{|<\/script/g,
+            /[\r\\`]|\0\d?|\$\{|<\/script/g,
             _replacer
         )}\``
     }
@@ -90,10 +101,7 @@ export function decode(input) {
         , oi = 0
         , k
         , cache
-        , next = _ =>
-            (cache = input.charCodeAt(ii++)) >> 7
-                ? cache = 0 // In HTML, 0 is likely to be converted to 65533 (�)
-                : cache
+        , next = _ => cache = input.charCodeAt(ii++)
     for (; ii < il; out[oi++] = cache << 8 - k | next() >> --k)
         k || next(k = 7);
     return out
