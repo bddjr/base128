@@ -49,9 +49,9 @@ function test(base128) {
         if (enableOutput)
             fs.writeFileSync(`${outputDir}/${name}.js`, encodedTemplate)
 
-        console.time('time eval')
-        const euqeval = (0, eval)(encodedTemplate)
-        console.timeEnd('time eval')
+        console.time('time parseJSTemplateLiterals')
+        const euqeval = base128.parseJSTemplateLiterals(encodedTemplate)
+        console.timeEnd('time parseJSTemplateLiterals')
         // console.log('eval length:', euqeval.length)
         console.time('time decode')
         const decoded = base128.decode(euqeval)

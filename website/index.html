@@ -237,79 +237,6 @@
         }
 
         /**
-         * 在沙盒里执行eval。
-         * 内部无法获取父window，无法发起网络请求，但仍可能执行死循环导致网页卡死。
-         * 注意：执行后需检查输出的类型，避免向内部传递外界的对象、函数等，以防止沙盒逃逸。
-         * @type {typeof eval}
-         */
-        const sandboxEval = (() => {
-            const iframe = document.createElement('iframe')
-            iframe.style.display = 'none'
-            document.body.appendChild(iframe)
-            const sandboxEval = iframe.contentWindow.eval
-
-            /**
-             * After the iframe is removed, as long as the outside world no longer injects objects into the iframe,
-             * scripts inside the iframe cannot access the parent window, initiate network requests, or create child iframes.
-             * This is the core principle of sandboxEval.
-             * 
-             * SAFETY:
-             * Removing the iframe does not prevent subsequent calls to sandboxEval.
-             * Tested and working correctly in Chrome, Edge, Firefox, and Safari.
-             */
-            iframe.remove()
-
-            return sandboxEval
-        })()
-
-        // 全局变量便于测试
-        self.sandboxEval = sandboxEval
-
-        /**
-         * 检查并解析输入的模板字符串，防恶意代码，防注入死循环。
-         * @param {string} input
-         * @returns {string}
-         */
-        const parseJSTemplateLiterals = (input) => {
-            if (typeof input != 'string')
-                throw TypeError("parseJSTemplateLiterals: input must be a string");
-            const err = "parseJSTemplateLiterals: invalid input"
-            input = input.trim()
-            if (input.length < 2)
-                throw SyntaxError(err);
-            if (input.charCodeAt(0) !== 96) // '`'
-                throw SyntaxError(err);
-            const loopMaxIndex = input.length - 1;
-            if (input.charCodeAt(loopMaxIndex) !== 96) // '`'
-                throw SyntaxError(err);
-            let i = 1
-            while (i < loopMaxIndex) {
-                switch (input.charCodeAt(i)) {
-                    case 92: // '\\'
-                        // ignore next char
-                        i += 2
-                        break
-                    case 36: // '$'
-                        // anti '${'
-                        i++
-                        if (input.charCodeAt(i) === 123) // '{'
-                            throw SyntaxError(err);
-                        break
-                    case 96: // '`'
-                        throw SyntaxError(err);
-                    default:
-                        i++
-                }
-            }
-            if (i !== loopMaxIndex)
-                throw SyntaxError(err);
-            const out = sandboxEval(input)
-            if (typeof out != 'string')
-                throw SyntaxError(err);
-            return out
-        }
-
-        /**
          * @param {File} file
          * @returns {Promise<Uint8Array<ArrayBuffer>>}
          */
@@ -653,7 +580,7 @@
             }
             const decode = async () => {
                 const inputValue = await getInputValue();
-                const input = parseJSTemplateLiterals(inputValue)
+                const input = base128.parseJSTemplateLiterals(inputValue)
                 return base128.decode(input)
             }
             const oninput = async () => {

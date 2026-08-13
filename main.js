@@ -107,8 +107,47 @@ export function decode(input) {
     return out
 }
 
+export function parseJSTemplateLiterals(input) {
+    if (typeof input != 'string')
+        throw TypeError("parseJSTemplateLiterals: input must be a string");
+    const err = "parseJSTemplateLiterals: invalid input"
+    input = input.trim()
+    if (input.length < 2)
+        throw SyntaxError(err);
+    if (input.charCodeAt(0) !== 96) // '`'
+        throw SyntaxError(err);
+    const loopMaxIndex = input.length - 1;
+    if (input.charCodeAt(loopMaxIndex) !== 96) // '`'
+        throw SyntaxError(err);
+    let i = 1
+    while (i < loopMaxIndex) {
+        switch (input.charCodeAt(i)) {
+            case 36: // '$'
+                // anti '${'
+                if (input.charCodeAt(++i) === 123) // '{'
+                    throw SyntaxError(err);
+                break
+            case 92: // '\\'
+                // ignore next char
+                i += 2
+                break
+            case 96: // '`'
+                throw SyntaxError(err);
+            default:
+                i++
+        }
+    }
+    if (i !== loopMaxIndex)
+        throw SyntaxError(err);
+    const out = (0, eval)(input)
+    if (typeof out != 'string')
+        throw SyntaxError(err);
+    return out
+}
+
 export default {
     EncodeResult,
     encode,
-    decode
+    decode,
+    parseJSTemplateLiterals
 }

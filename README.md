@@ -18,7 +18,7 @@ const input = fs.readFileSync("example.gz")
 
 const encodedTemplate = base128.encode(input).toJSTemplateLiterals()
 
-const decodedBytes = base128.decode(eval(encodedTemplate))
+const decodedBytes = base128.decode(base128.parseJSTemplateLiterals(encodedTemplate))
 ```
 
 ---
@@ -32,12 +32,12 @@ screenshot-45.519.jpg
 file length: 682086
 
 base128:
-time encode: 10.296ms
-time toString: 0.244ms
-time toJSTemplateLiterals: 11.763ms
+time encode: 10.167ms
+time toString: 0.345ms
+time toJSTemplateLiterals: 17.59ms
 toJSTemplateLiterals length: 804860
-time eval: 5.963ms
-time decode: 6.246ms
+time parseJSTemplateLiterals: 9.112ms
+time decode: 5.306ms
 equal: true
 
 base64:
@@ -51,12 +51,12 @@ Encode `50MB` file, use base128 is `7,664,748 Bytes` smaller than base64:
 file length: 50000000
 
 base128:
-time encode: 69.265ms
-time toString: 9.311ms
-time toJSTemplateLiterals: 211.551ms
+time encode: 68.431ms
+time toString: 8.745ms
+time toJSTemplateLiterals: 205.384ms
 toJSTemplateLiterals length: 59001920
-time eval: 1.049s
-time decode: 170.828ms
+time parseJSTemplateLiterals: 1.178s
+time decode: 161.5ms
 equal: true
 
 base64:
