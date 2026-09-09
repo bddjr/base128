@@ -1,34 +1,10 @@
-/** @type {(bytes: Uint8Array) => string} */
-let _bytesToStr = (
-    (
-        typeof Buffer == 'function' &&
-        Buffer.prototype &&
-        typeof Buffer.prototype.latin1Slice == 'function'
-    )
-        ? typeof Deno == 'undefined'
-            ? (bytes) => Buffer.prototype.latin1Slice.call(bytes)
-            : (bytes) => {
-                // https://github.com/bddjr/base128/pull/5
-                try {
-                    Buffer.prototype.latin1Slice.call(0)
-                } catch (e) {
-                    // Deno >= 2.8.2
-                    // Uncaught TypeError: expected ArrayBufferView
-                    return (_bytesToStr = (bytes) => Buffer.prototype.latin1Slice.call(bytes))(bytes)
-                }
-                // Deno < 2.8.2
-                return (_bytesToStr = (bytes) => new TextDecoder().decode(bytes))(bytes)
-            }
-        // TextDecoder keeps the default UTF-8, which is already the fastest.
-        : (bytes) => new TextDecoder().decode(bytes)
-)
-
 export class EncodeResult {
     constructor(bytes) {
         this.bytes = bytes
     }
     toString() {
-        return _bytesToStr(this.bytes)
+        // TextDecoder keeps the default UTF-8, which is already the fastest.
+        return new TextDecoder().decode(this.bytes)
     }
     toJSTemplateLiterals() {
         return '`' + this.toString().replace(
