@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <link rel="icon" href="data:,">
     <link rel="preload" as="font" crossorigin href="./SegoeUISymbol-ControlCharFont.woff2">
-    <link rel="modulepreload" href="./base128.js">
+    <link rel="modulepreload" href="./browser.mjs">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>base128-ascii</title>
     <meta name="author" content="bddjr">
@@ -215,7 +215,7 @@
         </div>
     </div>
     <script type="module">
-        import base128 from './base128.js';
+        import base128 from './browser.mjs';
 
         // 全局变量便于测试
         self.base128 = base128
