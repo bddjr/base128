@@ -7,15 +7,35 @@ import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
 
+const enableOutput = false
+
+const inputDir = "testdata/input"
+const outputDir = "testdata/output"
+
+fs.rmSync(outputDir, { recursive: true, force: true })
+
+if (enableOutput && !fs.existsSync(outputDir))
+    fs.mkdirSync(outputDir)
+
+let allSuccess = true
+
+// Verify that the imported base128 is indeed a native implementation
+const nativeEncodeStr = String(base128.encode);
+if (!nativeEncodeStr.includes("[native code]")) {
+    throw new Error(`Test failed: base128.encode is not a native implementation!\nGot: ${nativeEncodeStr}`);
+}
+
 const require = createRequire(import.meta.url);
 
 // Determine which binary main.cjs imported
-const loadedFromCache = Object.keys(require.cache || {}).find(k => k.endsWith(".node"));
-const isV8 = base128._impl === "v8" || (Boolean(loadedFromCache) && loadedFromCache.endsWith("v8.node"));
+const isV8 = base128._impl === "v8";
 const currentBindingName = isV8 ? "v8.node" : "napi.node";
-const extraBindingName = isV8 ? "napi.node" : "v8.node";
 
+/**
+ * @returns {typeof base128 | undefined}
+ */
 function loadExtraBinding(filename) {
+    let lastError = null;
     // 1. Try local build directory
     const localPath = path.resolve("build", "Release", filename);
     if (fs.existsSync(localPath)) {
@@ -23,7 +43,7 @@ function loadExtraBinding(filename) {
             const mod = require(localPath);
             if (mod && mod._impl) return mod;
         } catch (e) {
-            console.warn(`Could not load local ${localPath}:`, e.message);
+            lastError = e;
         }
     }
     // 2. Try subpackages under npm/
@@ -35,33 +55,25 @@ function loadExtraBinding(filename) {
                 try {
                     const mod = require(subPath);
                     if (mod && mod._impl) return mod;
-                } catch (e) { }
+                } catch (e) {
+                    lastError = e;
+                }
             }
         }
     }
-    return null;
+    const err = new Error(`Failed to load ${filename}: ${lastError ? lastError.message : "binary not found"}`);
+    if (lastError) err.cause = lastError;
+    throw err;
 }
 
-const extraBase128 = loadExtraBinding(extraBindingName);
-
-const enableOutput = false
-
-// Verify that the imported base128 is indeed a native implementation
-const nativeEncodeStr = String(base128.encode);
-if (!nativeEncodeStr.includes("[native code]")) {
-    console.error("Test failed: base128.encode is not a native implementation!\nGot:", nativeEncodeStr);
-    process.exit(1);
+if (!isV8 && base128._impl !== "napi") {
+    throw new Error(`Expected napi.node implementation when V8 acceleration is not active, got: ${base128._impl}`);
 }
 
-const inputDir = "testdata/input"
-const outputDir = "testdata/output"
-
-fs.rmSync(outputDir, { recursive: true, force: true })
-
-if (enableOutput && !fs.existsSync(outputDir))
-    fs.mkdirSync(outputDir)
-
-let allSuccess = true
+const extraBase128 = isV8 && loadExtraBinding("napi.node");
+if (extraBase128 && extraBase128._impl !== "napi") {
+    throw new Error(`Expected extra binding to be napi.node, got: ${extraBase128._impl}`);
+}
 
 /**
  * @param {typeof base128} base128
@@ -114,6 +126,9 @@ function test(base128, implName = 'base128') {
         const isEqual = file.equals(decoded);
         allSuccess &&= isEqual
         console.log('equal:', isEqual)
+        if (!isEqual) {
+            throw new Error(`[${implName}] Test failed on ${name}: decoded data does not match original file`);
+        }
         console.log()
 
         console.log('base64:')
@@ -132,12 +147,10 @@ function test(base128, implName = 'base128') {
 console.log(`################## base128 (${currentBindingName} via main.cjs) ##################`);
 test(base128, currentBindingName);
 
-// test extra native addon (napi.node if v8.node was loaded, or v8.node if napi.node was loaded)
+// test extra native addon (napi.node when v8.node was loaded via main.cjs)
 if (extraBase128) {
-    console.log(`################## ${extraBindingName} (additional native addon) ##################`);
-    test(extraBase128, extraBindingName);
-} else {
-    console.log(`################## ${extraBindingName} (not available on this platform/runtime, skipped) ##################`);
+    console.log(`################## napi.node (additional native addon) ##################`);
+    test(extraBase128, "napi.node");
 }
 
 // test pure JS (browser.mjs)
@@ -193,6 +206,7 @@ for (const { name } of fs.readdirSync(inputDir).map(name => ({ name }))) {
     if (!bytesMatch || !strMatch || !jstlMatch || !cross1 || !cross2 || !cross3) {
         console.error(`Mismatch between native, browser, or miniDecode on file: ${name}`);
         allSuccess = false;
+        throw new Error(`Mismatch between native, browser, or miniDecode on file: ${name}`);
     }
 
     if (extraBase128) {
@@ -210,8 +224,9 @@ for (const { name } of fs.readdirSync(inputDir).map(name => ({ name }))) {
         allSuccess &&= crossExtra;
 
         if (!extraBytesMatch || !extraStrMatch || !extraJstlMatch || !crossExtra) {
-            console.error(`Mismatch between ${currentBindingName} and ${extraBindingName} on file: ${name}`);
+            console.error(`Mismatch between ${currentBindingName} and napi.node on file: ${name}`);
             allSuccess = false;
+            throw new Error(`Mismatch between ${currentBindingName} and napi.node on file: ${name}`);
         }
     }
 }
@@ -224,4 +239,6 @@ console.log('------------------')
 console.log('allSuccess:', allSuccess)
 console.log()
 
-allSuccess || process.exit(1)
+if (!allSuccess) {
+    throw new Error("Test failed: one or more checks did not succeed");
+}
