@@ -3,3 +3,5 @@ dist
 build
 testdata/output
 prebuilds
+npm/**/*.node
+downloaded-bindings

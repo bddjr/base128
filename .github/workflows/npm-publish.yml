@@ -6,8 +6,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  prebuild:
-    name: prebuild (${{ matrix.name }})
+  build-binding:
+    name: build (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -40,20 +40,23 @@ jobs:
 
       - run: pnpm i
 
-      - name: Build prebuild (${{ matrix.name }})
-        run: pnpm exec prebuildify --napi --strip
+      - name: Build native addon
+        run: pnpm run build
 
       - name: Test
         run: pnpm test:nobuild
 
-      - name: Upload prebuilds
+      - name: Prepare subpackage (${{ matrix.name }})
+        run: node scripts/prepare-subpackage.mjs ${{ matrix.name }}
+
+      - name: Upload binding (${{ matrix.name }})
         uses: actions/upload-artifact@v4
         with:
-          name: prebuilds-${{ matrix.name }}
-          path: prebuilds/
+          name: binding-${{ matrix.name }}
+          path: npm/${{ matrix.name }}/
 
   publish-npm:
-    needs: [prebuild]
+    needs: [build-binding]
     runs-on: ubuntu-latest
     permissions:
       id-token: write # Required for OIDC / npm provenance
@@ -74,15 +77,14 @@ jobs:
 
       - run: pnpm i
 
-      - name: Download all prebuilds
+      - name: Download all bindings
         uses: actions/download-artifact@v4
         with:
-          pattern: prebuilds-*
-          path: prebuilds
-          merge-multiple: true
+          pattern: binding-*
+          path: downloaded-bindings
 
-      - name: Display prebuilds structure
-        run: ls -R prebuilds
+      - name: Display downloaded bindings
+        run: ls -R downloaded-bindings
 
-      - name: Publish to npm
-        run: pnpm publish --no-git-checks
+      - name: Publish all packages
+        run: node scripts/publish-all.mjs downloaded-bindings
