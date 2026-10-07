@@ -3,7 +3,44 @@
 import base128 from "base128-ascii";
 import browserBase128 from "../src/browser.mjs";
 import { decode as miniDecode } from "../src/mini-decode.mjs";
-import fs from "node:fs"
+import fs from "node:fs";
+import path from "node:path";
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
+
+// Determine which binary main.cjs imported
+const loadedFromCache = Object.keys(require.cache || {}).find(k => k.endsWith(".node"));
+const isV8 = base128._impl === "v8" || (Boolean(loadedFromCache) && loadedFromCache.endsWith("v8.node"));
+const currentBindingName = isV8 ? "v8.node" : "napi.node";
+const extraBindingName = isV8 ? "napi.node" : "v8.node";
+
+function loadExtraBinding(filename) {
+    // 1. Try local build directory
+    const localPath = path.resolve("build", "Release", filename);
+    if (fs.existsSync(localPath)) {
+        try {
+            return require(localPath);
+        } catch (e) {
+            console.warn(`Could not load local ${localPath}:`, e.message);
+        }
+    }
+    // 2. Try subpackages under npm/
+    if (fs.existsSync("npm")) {
+        const subDirs = fs.readdirSync("npm");
+        for (const dir of subDirs) {
+            const subPath = path.resolve("npm", dir, filename);
+            if (fs.existsSync(subPath)) {
+                try {
+                    return require(subPath);
+                } catch (e) { }
+            }
+        }
+    }
+    return null;
+}
+
+const extraBase128 = loadExtraBinding(extraBindingName);
 
 const enableOutput = false
 
@@ -90,40 +127,48 @@ function test(base128, implName = 'base128') {
 }
 
 // test native addon (via main.cjs)
-console.log('################## base128 (native addon) ##################')
-test(base128, 'native');
+console.log(`################## base128 (${currentBindingName} via main.cjs) ##################`);
+test(base128, currentBindingName);
+
+// test extra native addon (napi.node if v8.node was loaded, or v8.node if napi.node was loaded)
+if (extraBase128) {
+    console.log(`################## ${extraBindingName} (additional native addon) ##################`);
+    test(extraBase128, extraBindingName);
+} else {
+    console.log(`################## ${extraBindingName} (not available on this platform/runtime, skipped) ##################`);
+}
 
 // test pure JS (browser.mjs)
-console.log('################## browser.mjs (pure JS) ##################')
+console.log('################## browser.mjs (pure JS) ##################');
 test(browserBase128, 'browser.mjs');
 
 // test mini-decode.mjs (pure JS decoder)
-console.log('################## mini-decode.mjs ##################')
+console.log('################## mini-decode.mjs ##################');
 {
-    const name = '50MB'
+    const name = '50MB';
     if (fs.existsSync(inputDir + '/' + name)) {
-        console.log('------------------')
-        console.log(`[mini-decode.mjs] ${name}`)
-        const file = fs.readFileSync(inputDir + '/' + name)
-        console.log('file length:', file.length)
-        console.log()
+        console.log('------------------');
+        console.log(`[mini-decode.mjs] ${name}`);
+        const file = fs.readFileSync(inputDir + '/' + name);
+        console.log('file length:', file.length);
+        console.log();
 
-        console.log('mini-decode.mjs:')
-        const encodedString = base128.encode(file).toString()
+        console.log('mini-decode.mjs:');
+        const encodedString = base128.encode(file).toString();
 
-        console.time('time decode')
-        const decoded = miniDecode(encodedString)
-        console.timeEnd('time decode')
+        console.time('time decode');
+        const decoded = miniDecode(encodedString);
+        console.timeEnd('time decode');
 
-        const isEqual = file.equals(decoded)
-        allSuccess &&= isEqual
-        console.log('equal:', isEqual)
+        const isEqual = file.equals(decoded);
+        allSuccess &&= isEqual;
+        console.log('equal:', isEqual);
     }
 }
 
-// cross-compatibility / parity check between native, browser.mjs and mini-decode.mjs
-console.log('------------------')
-console.log('Parity / Cross-compatibility Check:')
+// cross-compatibility / parity check between native, browser.mjs, extra binding, and mini-decode.mjs
+console.log('------------------');
+console.log('Parity / Cross-compatibility Check:');
 for (const { name } of fs.readdirSync(inputDir).map(name => ({ name }))) {
     const file = fs.readFileSync(inputDir + '/' + name);
     const nativeRes = base128.encode(file);
@@ -146,6 +191,26 @@ for (const { name } of fs.readdirSync(inputDir).map(name => ({ name }))) {
     if (!bytesMatch || !strMatch || !jstlMatch || !cross1 || !cross2 || !cross3) {
         console.error(`Mismatch between native, browser, or miniDecode on file: ${name}`);
         allSuccess = false;
+    }
+
+    if (extraBase128) {
+        const extraRes = extraBase128.encode(file);
+        const extraBytesMatch = Buffer.from(extraRes.bytes).equals(Buffer.from(nativeRes.bytes));
+        allSuccess &&= extraBytesMatch;
+
+        const extraStrMatch = extraRes.toString() === nativeRes.toString();
+        allSuccess &&= extraStrMatch;
+
+        const extraJstlMatch = extraRes.toJSTemplateLiterals() === nativeRes.toJSTemplateLiterals();
+        allSuccess &&= extraJstlMatch;
+
+        const crossExtra = file.equals(extraBase128.decode(nativeRes.toString()));
+        allSuccess &&= crossExtra;
+
+        if (!extraBytesMatch || !extraStrMatch || !extraJstlMatch || !crossExtra) {
+            console.error(`Mismatch between ${currentBindingName} and ${extraBindingName} on file: ${name}`);
+            allSuccess = false;
+        }
     }
 }
 console.log('Cross-compatibility passed:', allSuccess)

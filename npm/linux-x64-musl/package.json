@@ -2,9 +2,9 @@
   "name": "@base128-ascii/binding-linux-x64-musl",
   "version": "6.1.0",
   "description": "Native binding for base128-ascii on linux-x64-musl",
-  "main": "base128.node",
   "files": [
-    "base128.node"
+    "napi.node",
+    "v8.node"
   ],
   "os": [
     "linux"

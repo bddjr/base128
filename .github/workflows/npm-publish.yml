@@ -169,9 +169,9 @@ jobs:
             -I node_modules/node-api-headers/include \
             -I node_modules/node-addon-api \
             -Wl,-z,undefs \
-            src/addon.cpp -o npm/android-arm64/base128.node
-          $TOOLCHAIN_BIN/llvm-strip --strip-all npm/android-arm64/base128.node
-          node scripts/prepare-subpackage.mjs android-arm64 npm/android-arm64/base128.node
+            src/addon.cpp -o npm/android-arm64/napi.node
+          $TOOLCHAIN_BIN/llvm-strip --strip-all npm/android-arm64/napi.node
+          node scripts/prepare-subpackage.mjs android-arm64 npm/android-arm64/napi.node
 
       - name: Upload binding (android-arm64)
         uses: actions/upload-artifact@v4
@@ -209,9 +209,9 @@ jobs:
             -I node_modules/node-api-headers/include \
             -I node_modules/node-addon-api \
             -Wl,-z,undefs \
-            src/addon.cpp -o npm/openharmony-arm64/base128.node
-          $OHOS_SDK_NATIVE/llvm/bin/llvm-strip --strip-all npm/openharmony-arm64/base128.node
-          node scripts/prepare-subpackage.mjs openharmony-arm64 npm/openharmony-arm64/base128.node
+            src/addon.cpp -o npm/openharmony-arm64/napi.node
+          $OHOS_SDK_NATIVE/llvm/bin/llvm-strip --strip-all npm/openharmony-arm64/napi.node
+          node scripts/prepare-subpackage.mjs openharmony-arm64 npm/openharmony-arm64/napi.node
 
       - name: Upload binding (openharmony-arm64)
         uses: actions/upload-artifact@v4

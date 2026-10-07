@@ -38,17 +38,17 @@ const decodedBytes = base128.decode(jstlToStr)
 Encode this jpg file, use base128 is `104,588 Bytes` smaller than base64:
 
 ```
-[native] screenshot-45.519.jpg
+[v8.node] screenshot-45.519.jpg
 file length: 682086
 
-native:
-time encode: 0.47ms
-time toJSTemplateLiterals: 0.977ms
-time toString: 2.277ms
-time string toJSTemplateLiterals: 1.206ms
+v8.node:
+time encode: 0.445ms
+time toJSTemplateLiterals: 0.998ms
+time toString: 2.188ms
+time string toJSTemplateLiterals: 1.125ms
 toJSTemplateLiterals length: 804860
-time parseJSTemplateLiterals: 2.268ms
-time decode: 0.558ms
+time parseJSTemplateLiterals: 2.272ms
+time decode: 0.641ms
 equal: true
 
 base64:
@@ -58,17 +58,17 @@ encoded length: 909448
 Encode `50MB` file, use base128 is `7,664,748 Bytes` smaller than base64:
 
 ```
-[native] 50MB
+[v8.node] 50MB
 file length: 50000000
 
-native:
-time encode: 28.323ms
-time toJSTemplateLiterals: 67.385ms
-time toString: 10.079ms
-time string toJSTemplateLiterals: 81.044ms
+v8.node:
+time encode: 28.759ms
+time toJSTemplateLiterals: 69.702ms
+time toString: 10.017ms
+time string toJSTemplateLiterals: 69.391ms
 toJSTemplateLiterals length: 59001920
-time parseJSTemplateLiterals: 159.409ms
-time decode: 38.565ms
+time parseJSTemplateLiterals: 158.467ms
+time decode: 38.807ms
 equal: true
 
 base64:

@@ -2,6 +2,10 @@
 #define NAPI_VERSION 10
 #endif
 #include <napi.h>
+#ifdef USE_V8_ACCELERATION
+#include <v8.h>
+#include <v8-primitive.h>
+#endif
 #include <string>
 #include <vector>
 #include <algorithm>
@@ -85,7 +89,7 @@ static Napi::Value MakeUtf16String(napi_env env, char16_t* buf, size_t len) {
 }
 
 template <typename CharT>
-static inline Napi::Value EscapeToTemplateLiterals(napi_env env, const CharT* src, size_t len) {
+static inline CharT* EscapeBuffer(const CharT* src, size_t len, size_t* out_len) {
     size_t cap = len + (len / 4) + 128;
     CharT* out_buf = static_cast<CharT*>(std::malloc(cap * sizeof(CharT)));
     CharT* dst = out_buf;
@@ -229,7 +233,14 @@ static inline Napi::Value EscapeToTemplateLiterals(napi_env env, const CharT* sr
         }
     }
     *dst++ = static_cast<CharT>('`');
-    size_t out_len = dst - out_buf;
+    *out_len = dst - out_buf;
+    return out_buf;
+}
+
+template <typename CharT>
+static inline Napi::Value EscapeToTemplateLiterals(napi_env env, const CharT* src, size_t len) {
+    size_t out_len = 0;
+    CharT* out_buf = EscapeBuffer(src, len, &out_len);
     if constexpr (sizeof(CharT) == 1) {
         return MakeLatin1String(env, reinterpret_cast<char*>(out_buf), out_len);
     }
@@ -293,6 +304,32 @@ static Napi::Value EncodeResult_ToJSTemplateLiterals(const Napi::CallbackInfo& i
         }
         strVal = strRes;
     }
+
+#ifdef USE_V8_ACCELERATION
+    v8::Isolate* isolate = v8::Isolate::GetCurrent();
+    if (isolate) {
+        v8::Local<v8::Value> v8_val = *reinterpret_cast<v8::Local<v8::Value>*>(&strVal);
+        if (v8_val->IsString()) {
+            v8::Local<v8::String> v8_str = v8_val.As<v8::String>();
+            bool is_one_byte = false;
+            size_t out_len = 0;
+            void* out_buf = nullptr;
+            {
+                v8::String::ValueView view(isolate, v8_str);
+                is_one_byte = view.is_one_byte();
+                if (is_one_byte) {
+                    out_buf = EscapeBuffer(view.data8(), view.length(), &out_len);
+                } else {
+                    out_buf = EscapeBuffer(reinterpret_cast<const char16_t*>(view.data16()), view.length(), &out_len);
+                }
+            }
+            if (is_one_byte) {
+                return MakeLatin1String(env, static_cast<char*>(out_buf), out_len);
+            }
+            return MakeUtf16String(env, static_cast<char16_t*>(out_buf), out_len);
+        }
+    }
+#endif
 
     size_t u16len = 0;
     napi_get_value_string_utf16(env, strVal, nullptr, 0, &u16len);
@@ -631,6 +668,12 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
     set("encode", Napi::Function::New(env, Encode, "encode"));
     set("decode", Napi::Function::New(env, Decode, "decode"));
     set("parseJSTemplateLiterals", Napi::Function::New(env, ParseJSTemplateLiterals, "parseJSTemplateLiterals"));
+
+#ifdef USE_V8_ACCELERATION
+    set("_impl", Napi::String::New(env, "v8"));
+#else
+    set("_impl", Napi::String::New(env, "napi"));
+#endif
 
     exports.Set("default", defaultObj);
 

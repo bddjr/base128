@@ -29,7 +29,13 @@ export declare function decode(input: string): Uint8Array<ArrayBuffer>;
  */
 export declare function parseJSTemplateLiterals(input: string): string;
 
+/**
+ * Underlying implementation: 'v8' (V8 accelerated native addon), 'napi' (Node-API standard addon), or 'js' (pure JavaScript fallback).
+ */
+export declare const _impl: 'v8' | 'napi' | 'js';
+
 declare const base128: {
+    _impl: typeof _impl,
     EncodeResult: typeof EncodeResult,
     encode: typeof encode,
     decode: typeof decode,

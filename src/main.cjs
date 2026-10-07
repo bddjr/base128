@@ -30,48 +30,59 @@ loadBinding: {
     let bindingPkg;
     if (platform === "darwin") {
         if (arch === "arm64")
-            bindingPkg = "@base128-ascii/binding-darwin-arm64";
+            bindingPkg = "darwin-arm64";
         else if (arch === "x64")
-            bindingPkg = "@base128-ascii/binding-darwin-x64";
+            bindingPkg = "darwin-x64";
     } else if (platform === "win32") {
         if (arch === "x64")
-            bindingPkg = "@base128-ascii/binding-win32-x64-msvc";
+            bindingPkg = "win32-x64-msvc";
         else if (arch === "arm64")
-            bindingPkg = "@base128-ascii/binding-win32-arm64-msvc";
+            bindingPkg = "win32-arm64-msvc";
     } else if (platform === "linux") {
         if (arch === "x64") {
             bindingPkg = isMusl()
-                ? "@base128-ascii/binding-linux-x64-musl"
-                : "@base128-ascii/binding-linux-x64-gnu";
+                ? "linux-x64-musl"
+                : "linux-x64-gnu";
         } else if (arch === "arm64") {
             bindingPkg = isMusl()
-                ? "@base128-ascii/binding-linux-arm64-musl"
-                : "@base128-ascii/binding-linux-arm64-gnu";
+                ? "linux-arm64-musl"
+                : "linux-arm64-gnu";
         } else if (arch === "ppc64")
-            bindingPkg = "@base128-ascii/binding-linux-ppc64-gnu";
+            bindingPkg = "linux-ppc64-gnu";
         else if (arch === "s390x")
-            bindingPkg = "@base128-ascii/binding-linux-s390x-gnu";
+            bindingPkg = "linux-s390x-gnu";
     } else if (platform === "android") {
         if (arch === "arm64")
-            bindingPkg = "@base128-ascii/binding-android-arm64";
+            bindingPkg = "android-arm64";
     } else if (platform === "freebsd") {
         if (arch === "x64")
-            bindingPkg = "@base128-ascii/binding-freebsd-x64";
+            bindingPkg = "freebsd-x64";
     } else if (platform === "openharmony") {
         if (arch === "arm64")
-            bindingPkg = "@base128-ascii/binding-openharmony-arm64";
+            bindingPkg = "openharmony-arm64";
     }
 
-    if (bindingPkg) try {
-        module.exports = require(bindingPkg);
-        break loadBinding;
-    } catch (e) { }
+    if (bindingPkg) {
+        try {
+            module.exports = require(`@base128-ascii/binding-${bindingPkg}/v8.node`);
+            break loadBinding;
+        } catch (e) { }
+        try {
+            module.exports = require(`@base128-ascii/binding-${bindingPkg}/napi.node`);
+            break loadBinding;
+        } catch (e) { }
+    }
 
     // 2. Local development / CI test: load local build if subpackage not loaded
     try {
-        module.exports = require("../build/Release/base128.node");
-    } catch (e) {
-        // 3. Fallback: pure JS implementation
-        module.exports = require("./browser.mjs");
-    }
+        module.exports = require("../build/Release/v8.node");
+        break loadBinding;
+    } catch (e) { }
+    try {
+        module.exports = require("../build/Release/napi.node");
+        break loadBinding;
+    } catch (e) { }
+
+    // 3. Fallback: pure JS implementation
+    module.exports = require("./browser.mjs");
 }

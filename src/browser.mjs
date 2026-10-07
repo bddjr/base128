@@ -289,7 +289,10 @@ export function parseJSTemplateLiterals(input) {
     return out
 }
 
+export const _impl = 'js'
+
 export default {
+    _impl,
     EncodeResult,
     encode,
     decode,
