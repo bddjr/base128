@@ -1,6 +1,6 @@
 {
   "name": "@base128-ascii/binding-linux-s390x-gnu",
-  "version": "6.1.0",
+  "version": "0.0.0-init",
   "description": "Native binding for base128-ascii on linux-s390x-gnu",
   "files": [
     "napi.node",

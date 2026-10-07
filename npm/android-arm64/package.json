@@ -1,6 +1,6 @@
 {
   "name": "@base128-ascii/binding-android-arm64",
-  "version": "6.1.0",
+  "version": "0.0.0-init",
   "description": "Native binding for base128-ascii on android-arm64",
   "files": [
     "napi.node",

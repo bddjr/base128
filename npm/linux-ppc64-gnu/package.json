@@ -1,6 +1,6 @@
 {
   "name": "@base128-ascii/binding-linux-ppc64-gnu",
-  "version": "6.1.0",
+  "version": "0.0.0-init",
   "description": "Native binding for base128-ascii on linux-ppc64-gnu",
   "files": [
     "napi.node",
