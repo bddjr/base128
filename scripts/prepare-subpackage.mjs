@@ -22,7 +22,7 @@ subPkg.version = rootPkg.version;
 fs.writeFileSync(subPkgPath, JSON.stringify(subPkg, null, 2) + "\n");
 
 // 2. Locate built .node file
-const srcNode = path.join("build", "Release", "base128.node");
+const srcNode = process.argv[3] || path.join("build", "Release", "base128.node");
 const destNode = path.join("npm", target, "base128.node");
 
 if (!fs.existsSync(srcNode)) {

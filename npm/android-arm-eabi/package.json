@@ -1,0 +1,23 @@
+{
+  "name": "@base128-ascii/binding-android-arm-eabi",
+  "version": "6.1.0",
+  "description": "Native binding for base128-ascii on android-arm-eabi",
+  "main": "base128.node",
+  "files": [
+    "base128.node"
+  ],
+  "os": [
+    "android"
+  ],
+  "cpu": [
+    "arm"
+  ],
+  "license": "Unlicense",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bddjr/base128.git"
+  }
+}

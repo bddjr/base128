@@ -5,3 +5,4 @@ testdata/output
 prebuilds
 npm/**/*.node
 downloaded-bindings
+target

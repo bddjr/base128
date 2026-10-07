@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-binding:
+  build-native:
     name: build (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
     strategy:
@@ -14,12 +14,15 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            name: linux-x64
+            name: linux-x64-gnu
           - os: ubuntu-24.04-arm
-            name: linux-arm64
+            name: linux-arm64-gnu
             continue-on-error: true
           - os: windows-latest
-            name: win32-x64
+            name: win32-x64-msvc
+          - os: windows-latest
+            name: win32-arm64-msvc
+            arch: arm64
           - os: macos-latest
             name: darwin-arm64
           - os: macos-13
@@ -41,9 +44,16 @@ jobs:
       - run: pnpm i
 
       - name: Build native addon
-        run: pnpm run build
+        shell: bash
+        run: |
+          if [ -n "${{ matrix.arch }}" ]; then
+            pnpm exec node-gyp rebuild --arch=${{ matrix.arch }}
+          else
+            pnpm run build
+          fi
 
       - name: Test
+        if: ${{ !matrix.arch }}
         run: pnpm test:nobuild
 
       - name: Prepare subpackage (${{ matrix.name }})
@@ -55,8 +65,168 @@ jobs:
           name: binding-${{ matrix.name }}
           path: npm/${{ matrix.name }}/
 
+  build-container:
+    name: build (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x64-musl
+            image: node:20-alpine
+            pkg_cmd: apk add --no-cache python3 make g++
+          - name: linux-arm64-musl
+            image: arm64v8/node:20-alpine
+            pkg_cmd: apk add --no-cache python3 make g++
+            qemu: true
+          - name: linux-arm-gnueabihf
+            image: arm32v7/node:20-bookworm-slim
+            pkg_cmd: apt-get update && apt-get install -y python3 make g++
+            qemu: true
+          - name: linux-ppc64-gnu
+            image: ppc64le/node:20-bookworm-slim
+            pkg_cmd: apt-get update && apt-get install -y python3 make g++
+            qemu: true
+          - name: linux-s390x-gnu
+            image: s390x/node:20-bookworm-slim
+            pkg_cmd: apt-get update && apt-get install -y python3 make g++
+            qemu: true
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up QEMU
+        if: matrix.qemu
+        uses: docker/setup-qemu-action@v3
+
+      - name: Build in Docker container
+        run: |
+          docker run --rm \
+            -v "$PWD":/workspace \
+            -w /workspace \
+            ${{ matrix.image }} \
+            sh -c "${{ matrix.pkg_cmd }} && npm install --ignore-scripts && npx node-gyp rebuild && node scripts/prepare-subpackage.mjs ${{ matrix.name }} && chmod -R 777 npm"
+
+      - name: Upload binding (${{ matrix.name }})
+        uses: actions/upload-artifact@v4
+        with:
+          name: binding-${{ matrix.name }}
+          path: npm/${{ matrix.name }}/
+
+  build-freebsd:
+    name: build (freebsd-x64)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Build in FreeBSD VM
+        uses: cross-platform-actions/action@v0.26.0
+        with:
+          operating_system: freebsd
+          version: '14.0'
+          shell: bash
+          run: |
+            sudo pkg install -y node20 npm python3
+            npm install --ignore-scripts
+            npx node-gyp rebuild
+            node scripts/test.mjs
+            node scripts/prepare-subpackage.mjs freebsd-x64
+
+      - name: Upload binding (freebsd-x64)
+        uses: actions/upload-artifact@v4
+        with:
+          name: binding-freebsd-x64
+          path: npm/freebsd-x64/
+
+  build-android:
+    name: build (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: android-arm64
+            cxx: aarch64-linux-android24-clang++
+          - name: android-arm-eabi
+            cxx: armv7a-linux-androideabi24-clang++
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: latest
+          check-latest: true
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: "12"
+
+      - run: pnpm i
+
+      - name: Build Android binding
+        run: |
+          TOOLCHAIN_BIN="$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          CXX="$TOOLCHAIN_BIN/${{ matrix.cxx }}"
+          $CXX -O3 -fPIC -shared -std=c++17 -DNAPI_DISABLE_CPP_EXCEPTIONS \
+            -I node_modules/node-api-headers/include \
+            -I node_modules/node-addon-api \
+            -Wl,-z,undefs \
+            src/addon.cpp -o npm/${{ matrix.name }}/base128.node
+          $TOOLCHAIN_BIN/llvm-strip --strip-all npm/${{ matrix.name }}/base128.node
+          node scripts/prepare-subpackage.mjs ${{ matrix.name }} npm/${{ matrix.name }}/base128.node
+
+      - name: Upload binding (${{ matrix.name }})
+        uses: actions/upload-artifact@v4
+        with:
+          name: binding-${{ matrix.name }}
+          path: npm/${{ matrix.name }}/
+
+  build-openharmony:
+    name: build (openharmony-arm64)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: latest
+          check-latest: true
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: "12"
+
+      - run: pnpm i
+
+      - name: Setup OpenHarmony SDK
+        uses: Boshen/setup-ohos-sdk@v1.0.0
+
+      - name: Build OpenHarmony binding
+        run: |
+          CXX="$OHOS_SDK_NATIVE/llvm/bin/clang++"
+          $CXX --target=aarch64-linux-ohos --sysroot="$OHOS_SDK_NATIVE/sysroot" \
+            -O3 -fPIC -shared -std=c++17 -DNAPI_DISABLE_CPP_EXCEPTIONS \
+            -I node_modules/node-api-headers/include \
+            -I node_modules/node-addon-api \
+            -Wl,-z,undefs \
+            src/addon.cpp -o npm/openharmony-arm64/base128.node
+          $OHOS_SDK_NATIVE/llvm/bin/llvm-strip --strip-all npm/openharmony-arm64/base128.node
+          node scripts/prepare-subpackage.mjs openharmony-arm64 npm/openharmony-arm64/base128.node
+
+      - name: Upload binding (openharmony-arm64)
+        uses: actions/upload-artifact@v4
+        with:
+          name: binding-openharmony-arm64
+          path: npm/openharmony-arm64/
+
   publish-npm:
-    needs: [build-binding]
+    needs: [build-native, build-container, build-freebsd, build-android, build-openharmony]
+    if: ${{ always() && !cancelled() && needs.build-native.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       id-token: write # Required for OIDC / npm provenance

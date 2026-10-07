@@ -1,0 +1,23 @@
+{
+  "name": "@base128-ascii/binding-linux-arm-gnueabihf",
+  "version": "6.1.0",
+  "description": "Native binding for base128-ascii on linux-arm-gnueabihf",
+  "main": "base128.node",
+  "files": [
+    "base128.node"
+  ],
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "arm"
+  ],
+  "license": "Unlicense",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bddjr/base128.git"
+  }
+}

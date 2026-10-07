@@ -1,0 +1,26 @@
+{
+  "name": "@base128-ascii/binding-linux-s390x-gnu",
+  "version": "6.1.0",
+  "description": "Native binding for base128-ascii on linux-s390x-gnu",
+  "main": "base128.node",
+  "files": [
+    "base128.node"
+  ],
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "s390x"
+  ],
+  "libc": [
+    "glibc"
+  ],
+  "license": "Unlicense",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bddjr/base128.git"
+  }
+}
