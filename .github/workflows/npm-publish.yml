@@ -101,7 +101,14 @@ jobs:
             -v "$PWD":/workspace \
             -w /workspace \
             ${{ matrix.image }} \
-            sh -c "${{ matrix.pkg_cmd }} && npm install -g pnpm && pnpm install --ignore-scripts && pnpm run build && node scripts/prepare-subpackage.mjs ${{ matrix.name }} && chmod -R 777 npm"
+            sh -e -c "
+              ${{ matrix.pkg_cmd }}
+              npm install -g pnpm --no-ignore-scripts
+              pnpm i
+              pnpm run build
+              node scripts/prepare-subpackage.mjs ${{ matrix.name }}
+              chmod -R 777 npm
+            "
 
       - name: Upload binding (${{ matrix.name }})
         uses: actions/upload-artifact@v4
@@ -124,10 +131,9 @@ jobs:
           shell: bash
           run: |
             sudo pkg install -y node npm python3
-            sudo npm install -g pnpm
-            pnpm install --ignore-scripts
-            pnpm run build
-            pnpm test:nobuild
+            sudo npm install -g pnpm --no-ignore-scripts
+            pnpm i
+            pnpm test
             node scripts/prepare-subpackage.mjs freebsd-x64
 
       - name: Upload binding (freebsd-x64)
