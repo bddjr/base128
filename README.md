@@ -38,16 +38,17 @@ const decodedBytes = base128.decode(jstlToStr)
 Encode this jpg file, use base128 is `104,588 Bytes` smaller than base64:
 
 ```
-screenshot-45.519.jpg
+[native] screenshot-45.519.jpg
 file length: 682086
 
 native:
-time encode: 0.415ms
-time toString: 0.182ms
-time toJSTemplateLiterals: 3.345ms
+time encode: 0.47ms
+time toJSTemplateLiterals: 0.977ms
+time toString: 2.277ms
+time string toJSTemplateLiterals: 1.206ms
 toJSTemplateLiterals length: 804860
-time parseJSTemplateLiterals: 2.325ms
-time decode: 0.506ms
+time parseJSTemplateLiterals: 2.268ms
+time decode: 0.558ms
 equal: true
 
 base64:
@@ -57,16 +58,17 @@ encoded length: 909448
 Encode `50MB` file, use base128 is `7,664,748 Bytes` smaller than base64:
 
 ```
-50MB
+[native] 50MB
 file length: 50000000
 
 native:
-time encode: 28.907ms
-time toString: 11.813ms
-time toJSTemplateLiterals: 97.658ms
+time encode: 28.323ms
+time toJSTemplateLiterals: 67.385ms
+time toString: 10.079ms
+time string toJSTemplateLiterals: 81.044ms
 toJSTemplateLiterals length: 59001920
-time parseJSTemplateLiterals: 161.069ms
-time decode: 39.953ms
+time parseJSTemplateLiterals: 159.409ms
+time decode: 38.565ms
 equal: true
 
 base64:
@@ -80,9 +82,10 @@ If you need a minimal decoder, see [`src/mini-decode.mjs`](src/mini-decode.mjs).
 It results in an extremely small footprint after minification, making it ideal for scenarios that are highly sensitive to bundle size but less sensitive to decoding performance.
 
 ```
-50MB
+[mini-decode.mjs] 50MB
 file length: 50000000
 
-mini-decode:
-time decode: 161.209ms
+mini-decode.mjs:
+time decode: 160.442ms
+equal: true
 ```

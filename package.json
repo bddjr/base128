@@ -38,10 +38,10 @@
   ],
   "devDependencies": {
     "base128-ascii": "link:",
-    "es-check": "^9.5.3",
+    "es-check": "^9.8.1",
     "node-addon-api": "^8.9.2",
     "node-api-headers": "^1.9.0",
     "node-gyp": "^13.1.0",
-    "typescript": "^6.0.3"
+    "typescript": "^7.0.2"
   }
 }
