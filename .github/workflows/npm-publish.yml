@@ -75,26 +75,17 @@ jobs:
           - name: linux-x64-musl
             image: node:lts-alpine
             pkg_cmd: apk add --no-cache python3 make g++
-            pnpm_ver: "12"
           - name: linux-arm64-musl
             image: arm64v8/node:lts-alpine
             pkg_cmd: apk add --no-cache python3 make g++
-            pnpm_ver: "12"
-            qemu: true
-          - name: linux-arm-gnueabihf
-            image: arm32v7/node:lts-bookworm-slim
-            pkg_cmd: apt-get update && apt-get install -y python3 make g++
-            pnpm_ver: "11"
             qemu: true
           - name: linux-ppc64-gnu
             image: ppc64le/node:lts-bookworm-slim
             pkg_cmd: apt-get update && apt-get install -y python3 make g++
-            pnpm_ver: "12"
             qemu: true
           - name: linux-s390x-gnu
             image: s390x/node:lts-bookworm-slim
             pkg_cmd: apt-get update && apt-get install -y python3 make g++
-            pnpm_ver: "12"
             qemu: true
     continue-on-error: true
     steps:
@@ -110,7 +101,7 @@ jobs:
             -v "$PWD":/workspace \
             -w /workspace \
             ${{ matrix.image }} \
-            sh -c "${{ matrix.pkg_cmd }} && npm install -g pnpm@${{ matrix.pnpm_ver }} && pnpm install --ignore-scripts && pnpm run build && node scripts/prepare-subpackage.mjs ${{ matrix.name }} && chmod -R 777 npm"
+            sh -c "${{ matrix.pkg_cmd }} && npm install -g pnpm && pnpm install --ignore-scripts && pnpm run build && node scripts/prepare-subpackage.mjs ${{ matrix.name }} && chmod -R 777 npm"
 
       - name: Upload binding (${{ matrix.name }})
         uses: actions/upload-artifact@v4
@@ -146,16 +137,8 @@ jobs:
           path: npm/freebsd-x64/
 
   build-android:
-    name: build (${{ matrix.name }})
+    name: build (android-arm64)
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: android-arm64
-            cxx: aarch64-linux-android24-clang++
-          - name: android-arm-eabi
-            cxx: armv7a-linux-androideabi24-clang++
     continue-on-error: true
     steps:
       - uses: actions/checkout@v6
@@ -175,20 +158,20 @@ jobs:
       - name: Build Android binding
         run: |
           TOOLCHAIN_BIN="$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
-          CXX="$TOOLCHAIN_BIN/${{ matrix.cxx }}"
+          CXX="$TOOLCHAIN_BIN/aarch64-linux-android24-clang++"
           $CXX -O3 -fPIC -shared -std=c++17 -DNAPI_DISABLE_CPP_EXCEPTIONS \
             -I node_modules/node-api-headers/include \
             -I node_modules/node-addon-api \
             -Wl,-z,undefs \
-            src/addon.cpp -o npm/${{ matrix.name }}/base128.node
-          $TOOLCHAIN_BIN/llvm-strip --strip-all npm/${{ matrix.name }}/base128.node
-          node scripts/prepare-subpackage.mjs ${{ matrix.name }} npm/${{ matrix.name }}/base128.node
+            src/addon.cpp -o npm/android-arm64/base128.node
+          $TOOLCHAIN_BIN/llvm-strip --strip-all npm/android-arm64/base128.node
+          node scripts/prepare-subpackage.mjs android-arm64 npm/android-arm64/base128.node
 
-      - name: Upload binding (${{ matrix.name }})
+      - name: Upload binding (android-arm64)
         uses: actions/upload-artifact@v4
         with:
-          name: binding-${{ matrix.name }}
-          path: npm/${{ matrix.name }}/
+          name: binding-android-arm64
+          path: npm/android-arm64/
 
   build-openharmony:
     name: build (openharmony-arm64)

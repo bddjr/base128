@@ -47,17 +47,13 @@ loadBinding: {
             bindingPkg = isMusl()
                 ? "@base128-ascii/binding-linux-arm64-musl"
                 : "@base128-ascii/binding-linux-arm64-gnu";
-        } else if (arch === "arm")
-            bindingPkg = "@base128-ascii/binding-linux-arm-gnueabihf";
-        else if (arch === "ppc64")
+        } else if (arch === "ppc64")
             bindingPkg = "@base128-ascii/binding-linux-ppc64-gnu";
         else if (arch === "s390x")
             bindingPkg = "@base128-ascii/binding-linux-s390x-gnu";
     } else if (platform === "android") {
         if (arch === "arm64")
             bindingPkg = "@base128-ascii/binding-android-arm64";
-        else if (arch === "arm")
-            bindingPkg = "@base128-ascii/binding-android-arm-eabi";
     } else if (platform === "freebsd") {
         if (arch === "x64")
             bindingPkg = "@base128-ascii/binding-freebsd-x64";
