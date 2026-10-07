@@ -73,23 +73,28 @@ jobs:
       matrix:
         include:
           - name: linux-x64-musl
-            image: node:20-alpine
+            image: node:lts-alpine
             pkg_cmd: apk add --no-cache python3 make g++
+            pnpm_ver: "12"
           - name: linux-arm64-musl
-            image: arm64v8/node:20-alpine
+            image: arm64v8/node:lts-alpine
             pkg_cmd: apk add --no-cache python3 make g++
+            pnpm_ver: "12"
             qemu: true
           - name: linux-arm-gnueabihf
-            image: arm32v7/node:20-bookworm-slim
+            image: arm32v7/node:lts-bookworm-slim
             pkg_cmd: apt-get update && apt-get install -y python3 make g++
+            pnpm_ver: "11"
             qemu: true
           - name: linux-ppc64-gnu
-            image: ppc64le/node:20-bookworm-slim
+            image: ppc64le/node:lts-bookworm-slim
             pkg_cmd: apt-get update && apt-get install -y python3 make g++
+            pnpm_ver: "12"
             qemu: true
           - name: linux-s390x-gnu
-            image: s390x/node:20-bookworm-slim
+            image: s390x/node:lts-bookworm-slim
             pkg_cmd: apt-get update && apt-get install -y python3 make g++
+            pnpm_ver: "12"
             qemu: true
     continue-on-error: true
     steps:
@@ -105,7 +110,7 @@ jobs:
             -v "$PWD":/workspace \
             -w /workspace \
             ${{ matrix.image }} \
-            sh -c "${{ matrix.pkg_cmd }} && npm install --ignore-scripts && npx node-gyp rebuild && node scripts/prepare-subpackage.mjs ${{ matrix.name }} && chmod -R 777 npm"
+            sh -c "${{ matrix.pkg_cmd }} && npm install -g pnpm@${{ matrix.pnpm_ver }} && pnpm install --ignore-scripts && pnpm run build && node scripts/prepare-subpackage.mjs ${{ matrix.name }} && chmod -R 777 npm"
 
       - name: Upload binding (${{ matrix.name }})
         uses: actions/upload-artifact@v4
@@ -127,10 +132,11 @@ jobs:
           version: '14.0'
           shell: bash
           run: |
-            sudo pkg install -y node20 npm python3
-            npm install --ignore-scripts
-            npx node-gyp rebuild
-            node scripts/test.mjs
+            sudo pkg install -y node npm python3
+            sudo npm install -g pnpm
+            pnpm install --ignore-scripts
+            pnpm run build
+            pnpm test:nobuild
             node scripts/prepare-subpackage.mjs freebsd-x64
 
       - name: Upload binding (freebsd-x64)
