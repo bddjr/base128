@@ -64,8 +64,11 @@ loadBinding: {
 
     if (bindingPkg) {
         try {
-            module.exports = require(`@base128-ascii/binding-${bindingPkg}/v8.node`);
-            break loadBinding;
+            const mod = require(`@base128-ascii/binding-${bindingPkg}/v8.node`);
+            if (mod && mod._impl === "v8") {
+                module.exports = mod;
+                break loadBinding;
+            }
         } catch (e) { }
         try {
             module.exports = require(`@base128-ascii/binding-${bindingPkg}/napi.node`);
@@ -75,8 +78,11 @@ loadBinding: {
 
     // 2. Local development / CI test: load local build if subpackage not loaded
     try {
-        module.exports = require("../build/Release/v8.node");
-        break loadBinding;
+        const mod = require("../build/Release/v8.node");
+        if (mod && mod._impl === "v8") {
+            module.exports = mod;
+            break loadBinding;
+        }
     } catch (e) { }
     try {
         module.exports = require("../build/Release/napi.node");

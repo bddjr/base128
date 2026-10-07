@@ -20,7 +20,8 @@ function loadExtraBinding(filename) {
     const localPath = path.resolve("build", "Release", filename);
     if (fs.existsSync(localPath)) {
         try {
-            return require(localPath);
+            const mod = require(localPath);
+            if (mod && mod._impl) return mod;
         } catch (e) {
             console.warn(`Could not load local ${localPath}:`, e.message);
         }
@@ -32,7 +33,8 @@ function loadExtraBinding(filename) {
             const subPath = path.resolve("npm", dir, filename);
             if (fs.existsSync(subPath)) {
                 try {
-                    return require(subPath);
+                    const mod = require(subPath);
+                    if (mod && mod._impl) return mod;
                 } catch (e) { }
             }
         }

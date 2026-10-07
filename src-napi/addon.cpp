@@ -89,7 +89,7 @@ static Napi::Value MakeUtf16String(napi_env env, char16_t* buf, size_t len) {
 }
 
 template <typename CharT>
-static inline CharT* EscapeBuffer(const CharT* src, size_t len, size_t* out_len) {
+static inline CharT* EscapeToTemplateLiterals(const CharT* src, size_t len, size_t* out_len) {
     size_t cap = len + (len / 4) + 128;
     CharT* out_buf = static_cast<CharT*>(std::malloc(cap * sizeof(CharT)));
     CharT* dst = out_buf;
@@ -237,16 +237,6 @@ static inline CharT* EscapeBuffer(const CharT* src, size_t len, size_t* out_len)
     return out_buf;
 }
 
-template <typename CharT>
-static inline Napi::Value EscapeToTemplateLiterals(napi_env env, const CharT* src, size_t len) {
-    size_t out_len = 0;
-    CharT* out_buf = EscapeBuffer(src, len, &out_len);
-    if constexpr (sizeof(CharT) == 1) {
-        return MakeLatin1String(env, reinterpret_cast<char*>(out_buf), out_len);
-    }
-    return MakeUtf16String(env, reinterpret_cast<char16_t*>(out_buf), out_len);
-}
-
 static Napi::Value EncodeResult_Constructor(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
     if (!info.IsConstructCall()) {
@@ -289,9 +279,11 @@ static Napi::Value EncodeResult_ToJSTemplateLiterals(const Napi::CallbackInfo& i
         if (bytesVal.IsTypedArray()) {
             // Read this.bytes directly to accelerate string construction (guaranteed ASCII Base128)
             Napi::TypedArray ta = bytesVal.As<Napi::TypedArray>();
-            const uint8_t* data = reinterpret_cast<const uint8_t*>(ta.ArrayBuffer().Data()) + ta.ByteOffset();
+            const char* data = reinterpret_cast<const char*>(ta.ArrayBuffer().Data()) + ta.ByteOffset();
             size_t len = ta.ByteLength();
-            return EscapeToTemplateLiterals(env, data, len);
+            size_t out_len = 0;
+            char* out_buf = EscapeToTemplateLiterals(data, len, &out_len);
+            return MakeLatin1String(env, out_buf, out_len);
         }
     }
 
@@ -318,9 +310,9 @@ static Napi::Value EncodeResult_ToJSTemplateLiterals(const Napi::CallbackInfo& i
                 v8::String::ValueView view(isolate, v8_str);
                 is_one_byte = view.is_one_byte();
                 if (is_one_byte) {
-                    out_buf = EscapeBuffer(reinterpret_cast<const char*>(view.data8()), view.length(), &out_len);
+                    out_buf = EscapeToTemplateLiterals(reinterpret_cast<const char*>(view.data8()), view.length(), &out_len);
                 } else {
-                    out_buf = EscapeBuffer(reinterpret_cast<const char16_t*>(view.data16()), view.length(), &out_len);
+                    out_buf = EscapeToTemplateLiterals(reinterpret_cast<const char16_t*>(view.data16()), view.length(), &out_len);
                 }
             }
             if (is_one_byte) {
@@ -344,17 +336,19 @@ static Napi::Value EncodeResult_ToJSTemplateLiterals(const Napi::CallbackInfo& i
         char* in_buf = static_cast<char*>(std::malloc(u16len + 1));
         size_t copied = 0;
         napi_get_value_string_latin1(env, strVal, in_buf, u16len + 1, &copied);
-        Napi::Value result = EscapeToTemplateLiterals(env, reinterpret_cast<const uint8_t*>(in_buf), u16len);
+        size_t out_len = 0;
+        char* out_buf = EscapeToTemplateLiterals(in_buf, u16len, &out_len);
         std::free(in_buf);
-        return result;
+        return MakeLatin1String(env, out_buf, out_len);
     }
 
     char16_t* in_buf = static_cast<char16_t*>(std::malloc((u16len + 1) * sizeof(char16_t)));
     size_t copied = 0;
     napi_get_value_string_utf16(env, strVal, in_buf, u16len + 1, &copied);
-    Napi::Value result = EscapeToTemplateLiterals(env, in_buf, u16len);
+    size_t out_len = 0;
+    char16_t* out_buf = EscapeToTemplateLiterals(in_buf, u16len, &out_len);
     std::free(in_buf);
-    return result;
+    return MakeUtf16String(env, out_buf, out_len);
 }
 
 static Napi::Value Encode(const Napi::CallbackInfo& info) {
@@ -461,9 +455,7 @@ static Napi::Value Decode(const Napi::CallbackInfo& info) {
 }
 
 static inline void ThrowSyntaxError(Napi::Env env, const char* msg) {
-    Napi::Function syntaxErrorCtor = env.Global().Get("SyntaxError").As<Napi::Function>();
-    Napi::Object err = syntaxErrorCtor.New({ Napi::String::New(env, msg) });
-    napi_throw(env, err);
+    Napi::SyntaxError::New(env, msg).ThrowAsJavaScriptException();
 }
 
 static inline bool IsHexDigit(char16_t c) {
@@ -648,7 +640,47 @@ static Napi::Value ParseJSTemplateLiterals(const Napi::CallbackInfo& info) {
     return Napi::String::New(env, out.data(), out.size());
 }
 
+#ifdef USE_V8_ACCELERATION
+#if defined(_MSC_VER)
+#include <windows.h>
+#else
+#include <dlfcn.h>
+#endif
+
+static bool SafeTestV8(napi_env env) {
+#if defined(_MSC_VER)
+    __try
+#else
+    if (!dlsym(RTLD_DEFAULT, "_ZN2v87Isolate10GetCurrentEv")) {
+        return false;
+    }
+#endif
+    {
+        v8::Isolate* isolate = v8::Isolate::GetCurrent();
+        if (!isolate) return false;
+
+        napi_value str = nullptr;
+        if (napi_create_string_utf8(env, "`", 1, &str) != napi_ok || !str) return false;
+
+        v8::Local<v8::Value>* v8_val = reinterpret_cast<v8::Local<v8::Value>*>(&str);
+        return (*v8_val)->IsString();
+    }
+#if defined(_MSC_VER)
+    __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+#endif
+}
+#endif
+
 Napi::Object Init(Napi::Env env, Napi::Object exports) {
+#ifdef USE_V8_ACCELERATION
+    if (!SafeTestV8(env)) {
+        Napi::Error::New(env, "V8 acceleration is not supported in current runtime").ThrowAsJavaScriptException();
+        return Napi::Object();
+    }
+#endif
+
     Napi::Function ctor = Napi::Function::New(env, EncodeResult_Constructor, "EncodeResult");
     Napi::Object proto = ctor.Get("prototype").As<Napi::Object>();
     proto.Set("toString", Napi::Function::New(env, EncodeResult_ToString, "toString"));
