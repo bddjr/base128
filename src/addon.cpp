@@ -91,18 +91,19 @@ static inline Napi::Value EscapeToTemplateLiterals(napi_env env, const CharT* sr
     CharT* dst = out_buf;
     *dst++ = static_cast<CharT>('`');
 
-#if defined(__x86_64__) || defined(_M_X64)
-    if constexpr (sizeof(CharT) == 1) {
-        const __m128i v0  = _mm_set1_epi8(0);
-        const __m128i v13 = _mm_set1_epi8(13);
-        const __m128i v36 = _mm_set1_epi8(36);
-        const __m128i v60 = _mm_set1_epi8(60);
-        const __m128i v92 = _mm_set1_epi8(92);
-        const __m128i v96 = _mm_set1_epi8(96);
+    size_t i = 0;
+    while (i < len) {
+        size_t start = i;
 
-        size_t i = 0;
-        while (i < len) {
-            size_t start = i;
+#if defined(__x86_64__) || defined(_M_X64)
+        if constexpr (sizeof(CharT) == 1) {
+            const __m128i v0  = _mm_set1_epi8(0);
+            const __m128i v13 = _mm_set1_epi8(13);
+            const __m128i v36 = _mm_set1_epi8(36);
+            const __m128i v60 = _mm_set1_epi8(60);
+            const __m128i v92 = _mm_set1_epi8(92);
+            const __m128i v96 = _mm_set1_epi8(96);
+
             while (i + 16 <= len) {
                 __m128i v = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src + i));
                 __m128i m0  = _mm_cmpeq_epi8(v, v0);
@@ -126,82 +127,34 @@ static inline Napi::Value EscapeToTemplateLiterals(napi_env env, const CharT* sr
                 }
                 i += 16;
             }
-            while (i < len && !kIsSpecialChar[static_cast<uint8_t>(src[i])]) {
-                i++;
-            }
+        }
+#elif defined(__aarch64__) || defined(_M_ARM64)
+        if constexpr (sizeof(CharT) == 1) {
+            const uint8x16_t v0  = vdupq_n_u8(0);
+            const uint8x16_t v13 = vdupq_n_u8(13);
+            const uint8x16_t v36 = vdupq_n_u8(36);
+            const uint8x16_t v60 = vdupq_n_u8(60);
+            const uint8x16_t v92 = vdupq_n_u8(92);
+            const uint8x16_t v96 = vdupq_n_u8(96);
 
-            size_t chunk_len = i - start;
-            if (chunk_len > 0) {
-                if (static_cast<size_t>(dst - out_buf) + chunk_len + 32 > cap) {
-                    size_t offset = dst - out_buf;
-                    cap = cap * 2 + chunk_len + 128;
-                    out_buf = static_cast<CharT*>(std::realloc(out_buf, cap * sizeof(CharT)));
-                    dst = out_buf + offset;
+            while (i + 16 <= len) {
+                uint8x16_t v = vld1q_u8(reinterpret_cast<const uint8_t*>(src + i));
+                uint8x16_t m0  = vceqq_u8(v, v0);
+                uint8x16_t m13 = vceqq_u8(v, v13);
+                uint8x16_t m36 = vceqq_u8(v, v36);
+                uint8x16_t m60 = vceqq_u8(v, v60);
+                uint8x16_t m92 = vceqq_u8(v, v92);
+                uint8x16_t m96 = vceqq_u8(v, v96);
+                uint8x16_t any = vorrq_u8(vorrq_u8(m0, m13),
+                                 vorrq_u8(vorrq_u8(m36, m60), vorrq_u8(m92, m96)));
+                if (vmaxvq_u8(any) != 0) {
+                    break;
                 }
-                std::memcpy(dst, src + start, chunk_len * sizeof(CharT));
-                dst += chunk_len;
-            }
-            if (i >= len) break;
-
-            if (static_cast<size_t>(dst - out_buf) + 16 > cap) {
-                size_t offset = dst - out_buf;
-                cap = cap * 2 + 128;
-                out_buf = static_cast<CharT*>(std::realloc(out_buf, cap * sizeof(CharT)));
-                dst = out_buf + offset;
-            }
-
-            CharT c = src[i];
-            switch (c) {
-                case '\r':
-                    *dst++ = '\\'; *dst++ = 'r'; i++; break;
-                case '\\':
-                    *dst++ = '\\'; *dst++ = '\\'; i++; break;
-                case '`':
-                    *dst++ = '\\'; *dst++ = '`'; i++; break;
-                case '\0':
-                    if (i + 1 < len && src[i + 1] >= '0' && src[i + 1] <= '9') {
-                        *dst++ = '\\'; *dst++ = 'x'; *dst++ = '0'; *dst++ = '0';
-                        *dst++ = src[i + 1];
-                        i += 2;
-                    } else {
-                        *dst++ = '\\'; *dst++ = '0'; i++;
-                    }
-                    break;
-                case '$':
-                    if (i + 1 < len && src[i + 1] == '{') {
-                        *dst++ = '\\'; *dst++ = '$'; *dst++ = '{';
-                        i += 2;
-                    } else {
-                        *dst++ = '$'; i++;
-                    }
-                    break;
-                case '<':
-                    if (i + 7 < len &&
-                        src[i + 1] == '/' && src[i + 2] == 's' &&
-                        src[i + 3] == 'c' && src[i + 4] == 'r' &&
-                        src[i + 5] == 'i' && src[i + 6] == 'p' &&
-                        src[i + 7] == 't') {
-                        const CharT tag[] = { '<', '\\', '/', 's', 'c', 'r', 'i', 'p', 't' };
-                        std::memcpy(dst, tag, sizeof(tag));
-                        dst += 9;
-                        i += 8;
-                    } else {
-                        *dst++ = '<'; i++;
-                    }
-                    break;
-                default:
-                    *dst++ = c; i++; break;
+                i += 16;
             }
         }
-        *dst++ = static_cast<CharT>('`');
-        size_t out_len = dst - out_buf;
-        return MakeLatin1String(env, reinterpret_cast<char*>(out_buf), out_len);
-    }
 #endif
 
-    size_t i = 0;
-    while (i < len) {
-        size_t start = i;
         while (i < len) {
             CharT c = src[i];
             if constexpr (sizeof(CharT) == 1) {
