@@ -169,7 +169,7 @@ jobs:
             -I node_modules/node-api-headers/include \
             -I node_modules/node-addon-api \
             -Wl,-z,undefs \
-            src/addon.cpp -o npm/android-arm64/napi.node
+            src-napi/addon.cpp -o npm/android-arm64/napi.node
           $TOOLCHAIN_BIN/llvm-strip --strip-all npm/android-arm64/napi.node
           node scripts/prepare-subpackage.mjs android-arm64 npm/android-arm64/napi.node
 
@@ -209,7 +209,7 @@ jobs:
             -I node_modules/node-api-headers/include \
             -I node_modules/node-addon-api \
             -Wl,-z,undefs \
-            src/addon.cpp -o npm/openharmony-arm64/napi.node
+            src-napi/addon.cpp -o npm/openharmony-arm64/napi.node
           $OHOS_SDK_NATIVE/llvm/bin/llvm-strip --strip-all npm/openharmony-arm64/napi.node
           node scripts/prepare-subpackage.mjs openharmony-arm64 npm/openharmony-arm64/napi.node
 
