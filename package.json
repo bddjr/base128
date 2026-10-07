@@ -1,24 +1,24 @@
 {
   "name": "base128-ascii",
-  "version": "6.0.1",
+  "version": "6.1.0",
   "author": "bddjr",
   "description": "Smaller than base64, only use ASCII, can run in web browser.",
   "license": "Unlicense",
   "type": "module",
-  "main": "main.js",
-  "types": "main.d.ts",
-  "browser": "browser.mjs",
+  "main": "src/main.cjs",
+  "types": "src/main.d.ts",
+  "browser": "src/browser.mjs",
   "files": [
-    "main.js",
-    "main.d.ts",
-    "browser.mjs"
+    "src",
+    "prebuilds"
   ],
   "scripts": {
-    "check": "es-check es6 --checkFeatures --module main.js && tsc",
-    "test": "node --run check && node scripts/test.mjs",
+    "build": "node-gyp rebuild",
+    "check": "es-check es6 --checkFeatures --module src/main.cjs src/browser.mjs src/mini-decode.mjs && tsc",
+    "test": "pnpm check && pnpm build && node scripts/test.mjs",
+    "test:nobuild": "pnpm check && node scripts/test.mjs",
     "test:deno": "deno run --allow-all scripts/test.mjs",
-    "test:bun": "bun scripts/test.mjs",
-    "prepublishOnly": "node --run test"
+    "test:bun": "bun scripts/test.mjs"
   },
   "repository": {
     "type": "git",
@@ -40,6 +40,12 @@
   "devDependencies": {
     "base128-ascii": "link:",
     "es-check": "^9.5.3",
+    "node-addon-api": "^8.9.2",
+    "node-gyp": "^13.1.0",
+    "prebuildify": "^6.0.1",
     "typescript": "^6.0.3"
+  },
+  "dependencies": {
+    "node-gyp-build": "^4.8.4"
   }
 }

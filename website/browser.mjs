@@ -1,1 +1,1 @@
-../browser.mjs
+../src/browser.mjs

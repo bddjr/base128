@@ -1,0 +1,25 @@
+{
+  "configurations": [
+    {
+      "name": "Win32",
+      "includePath": [
+        "${workspaceFolder}/**",
+        "${workspaceFolder}/node_modules/node-addon-api",
+        "${workspaceFolder}/node_modules/.pnpm/node-addon-api@*/node_modules/node-addon-api",
+        "${env:LOCALAPPDATA}/node-gyp/Cache/*/include/node",
+        "${env:LOCALAPPDATA}/node-gyp/Cache/**"
+      ],
+      "defines": [
+        "_DEBUG",
+        "UNICODE",
+        "_UNICODE",
+        "NAPI_DISABLE_CPP_EXCEPTIONS"
+      ],
+      "compilerPath": "C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC/14.44.35207/bin/Hostx64/x64/cl.exe",
+      "cStandard": "c17",
+      "cppStandard": "c++17",
+      "intelliSenseMode": "windows-msvc-x64"
+    }
+  ],
+  "version": 4
+}

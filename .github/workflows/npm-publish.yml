@@ -3,14 +3,61 @@ name: Node.js Package
 on:
   release:
     types: [published]
-
-permissions:
-  id-token: write # Required for OIDC
-  contents: read
+  workflow_dispatch:
 
 jobs:
+  prebuild:
+    name: prebuild (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            name: linux-x64
+          - os: ubuntu-24.04-arm
+            name: linux-arm64
+            continue-on-error: true
+          - os: windows-latest
+            name: win32-x64
+          - os: macos-latest
+            name: darwin-arm64
+          - os: macos-13
+            name: darwin-x64
+    continue-on-error: ${{ matrix.continue-on-error || false }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: latest
+          check-latest: true
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: "12"
+
+      - run: pnpm i
+
+      - name: Build prebuild (${{ matrix.name }})
+        run: pnpm exec prebuildify --napi --strip
+
+      - name: Test
+        run: pnpm test:nobuild
+
+      - name: Upload prebuilds
+        uses: actions/upload-artifact@v4
+        with:
+          name: prebuilds-${{ matrix.name }}
+          path: prebuilds/
+
   publish-npm:
+    needs: [prebuild]
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write # Required for OIDC / npm provenance
+      contents: read
     steps:
       - uses: actions/checkout@v6
 
@@ -23,8 +70,19 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
-          version: "11"
+          version: "12"
 
       - run: pnpm i
 
-      - run: pnpm publish --no-git-checks
+      - name: Download all prebuilds
+        uses: actions/download-artifact@v4
+        with:
+          pattern: prebuilds-*
+          path: prebuilds
+          merge-multiple: true
+
+      - name: Display prebuilds structure
+        run: ls -R prebuilds
+
+      - name: Publish to npm
+        run: pnpm publish --no-git-checks

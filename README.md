@@ -4,9 +4,16 @@ Build for [vite-plugin-singlefile-compression](https://bddjr.github.io/vite-plug
 
 Preview: https://bddjr.github.io/base128/
 
+## Features
+
+- **Smaller than Base64**: ~12.5% smaller payload size than Base64.
+- **ASCII Safe**: Encodes binary data into safe ASCII characters and JavaScript template literals.
+- **High Performance**: Native C++ (Node-API) implementation for Node.js / Bun / Deno with prebuilt binaries across platforms (Linux, Windows, macOS).
+- **Universal**: Pure JavaScript fallback (`src/browser.mjs`) that runs seamlessly in all web browsers and runtimes.
+
 ## Setup
 
-```
+```sh
 npm i base128-ascii@latest
 ```
 
@@ -26,8 +33,6 @@ const jstlToStr = base128.parseJSTemplateLiterals(encodedTemplate)
 const decodedBytes = base128.decode(jstlToStr)
 ```
 
----
-
 ## Effect
 
 Encode this jpg file, use base128 is `104,588 Bytes` smaller than base64:
@@ -36,13 +41,13 @@ Encode this jpg file, use base128 is `104,588 Bytes` smaller than base64:
 screenshot-45.519.jpg
 file length: 682086
 
-base128:
-time encode: 10.167ms
-time toString: 0.345ms
-time toJSTemplateLiterals: 17.59ms
+native:
+time encode: 0.415ms
+time toString: 0.182ms
+time toJSTemplateLiterals: 3.345ms
 toJSTemplateLiterals length: 804860
-time parseJSTemplateLiterals: 9.112ms
-time decode: 5.306ms
+time parseJSTemplateLiterals: 2.325ms
+time decode: 0.506ms
 equal: true
 
 base64:
@@ -55,15 +60,29 @@ Encode `50MB` file, use base128 is `7,664,748 Bytes` smaller than base64:
 50MB
 file length: 50000000
 
-base128:
-time encode: 68.431ms
-time toString: 8.745ms
-time toJSTemplateLiterals: 205.384ms
+native:
+time encode: 28.907ms
+time toString: 11.813ms
+time toJSTemplateLiterals: 97.658ms
 toJSTemplateLiterals length: 59001920
-time parseJSTemplateLiterals: 1.178s
-time decode: 161.5ms
+time parseJSTemplateLiterals: 161.069ms
+time decode: 39.953ms
 equal: true
 
 base64:
 encoded length: 66666668
+```
+
+## Mini Decoder
+
+If you need a minimal decoder, see [`src/mini-decode.mjs`](src/mini-decode.mjs).
+
+It results in an extremely small footprint after minification, making it ideal for scenarios that are highly sensitive to bundle size but less sensitive to decoding performance.
+
+```
+50MB
+file length: 50000000
+
+mini-decode:
+time decode: 161.209ms
 ```

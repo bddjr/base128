@@ -1,9 +1,18 @@
 //@ts-check
 
 import base128 from "base128-ascii";
+import browserBase128 from "../src/browser.mjs";
+import { decode as miniDecode } from "../src/mini-decode.mjs";
 import fs from "node:fs"
 
 const enableOutput = false
+
+// Verify that the imported base128 is indeed a native implementation
+const nativeEncodeStr = String(base128.encode);
+if (!nativeEncodeStr.includes("[native code]")) {
+    console.error("Test failed: base128.encode is not a native implementation!\nGot:", nativeEncodeStr);
+    process.exit(1);
+}
 
 const inputDir = "testdata/input"
 const outputDir = "testdata/output"
@@ -17,31 +26,36 @@ let allSuccess = true
 
 /**
  * @param {typeof base128} base128
+ * @param {string} [implName]
  */
-function test(base128) {
+function test(base128, implName = 'base128') {
     /**
      * @param {string} name
      */
     function test2(name) {
         console.log('------------------')
-        console.log(name)
+        console.log(`[${implName}] ${name}`)
         const file = fs.readFileSync(inputDir + "/" + name)
         console.log('file length:', file.length)
         console.log()
 
-        console.log('base128:')
+        console.log(`${implName}:`)
 
         console.time('time encode')
         const result = base128.encode(file)
         console.timeEnd('time encode')
 
+        console.time('time toJSTemplateLiterals')
+        result.toJSTemplateLiterals()
+        console.timeEnd('time toJSTemplateLiterals')
+
         console.time('time toString')
         const encodedString = result.toString()
         console.timeEnd('time toString')
 
-        console.time('time toJSTemplateLiterals')
+        console.time('time string toJSTemplateLiterals')
         const encodedTemplate = result.toJSTemplateLiterals.call(encodedString)
-        console.timeEnd('time toJSTemplateLiterals')
+        console.timeEnd('time string toJSTemplateLiterals')
 
         // console.log(euq)
         console.log('toJSTemplateLiterals length:', encodedTemplate.length)
@@ -75,8 +89,66 @@ function test(base128) {
         .forEach(v => test2(v.name))
 }
 
-// test esm
-test(base128);
+// test native addon (via main.cjs)
+console.log('################## base128 (native addon) ##################')
+test(base128, 'native');
+
+// test pure JS (browser.mjs)
+console.log('################## browser.mjs (pure JS) ##################')
+test(browserBase128, 'browser.mjs');
+
+// test mini-decode.mjs (pure JS decoder)
+console.log('################## mini-decode.mjs ##################')
+{
+    const name = '50MB'
+    if (fs.existsSync(inputDir + '/' + name)) {
+        console.log('------------------')
+        console.log(`[mini-decode.mjs] ${name}`)
+        const file = fs.readFileSync(inputDir + '/' + name)
+        console.log('file length:', file.length)
+        console.log()
+
+        console.log('mini-decode.mjs:')
+        const encodedString = base128.encode(file).toString()
+
+        console.time('time decode')
+        const decoded = miniDecode(encodedString)
+        console.timeEnd('time decode')
+
+        const isEqual = file.equals(decoded)
+        allSuccess &&= isEqual
+        console.log('equal:', isEqual)
+    }
+}
+
+// cross-compatibility / parity check between native, browser.mjs and mini-decode.mjs
+console.log('------------------')
+console.log('Parity / Cross-compatibility Check:')
+for (const { name } of fs.readdirSync(inputDir).map(name => ({ name }))) {
+    const file = fs.readFileSync(inputDir + '/' + name);
+    const nativeRes = base128.encode(file);
+    const browserRes = browserBase128.encode(file);
+
+    const bytesMatch = Buffer.from(nativeRes.bytes).equals(Buffer.from(browserRes.bytes));
+    allSuccess &&= bytesMatch;
+
+    const strMatch = nativeRes.toString() === browserRes.toString();
+    allSuccess &&= strMatch;
+
+    const jstlMatch = nativeRes.toJSTemplateLiterals() === browserRes.toJSTemplateLiterals();
+    allSuccess &&= jstlMatch;
+
+    const cross1 = file.equals(base128.decode(browserRes.toString()));
+    const cross2 = file.equals(browserBase128.decode(nativeRes.toString()));
+    const cross3 = file.equals(miniDecode(nativeRes.toString()));
+    allSuccess &&= cross1 && cross2 && cross3;
+
+    if (!bytesMatch || !strMatch || !jstlMatch || !cross1 || !cross2 || !cross3) {
+        console.error(`Mismatch between native, browser, or miniDecode on file: ${name}`);
+        allSuccess = false;
+    }
+}
+console.log('Cross-compatibility passed:', allSuccess)
 
 console.log('------------------')
 
@@ -84,6 +156,5 @@ console.log('------------------')
 
 console.log('allSuccess:', allSuccess)
 console.log()
-
 
 allSuccess || process.exit(1)

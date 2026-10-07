@@ -3,6 +3,7 @@ name: test
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 jobs:
   test:
@@ -21,11 +22,11 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
-          version: 11
+          version: "12"
 
       - run: pnpm i
 
-      - run: node --run test
+      - run: pnpm test
 
       - name: Setup Deno
         uses: denoland/setup-deno@v2
@@ -46,7 +47,6 @@ jobs:
     needs: test
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
 
     permissions:
@@ -56,10 +56,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-
-      # - run: |
-      #     rm -f website/base128.js
-      #     cp main.js website/base128.js
 
       - name: Upload static files as artifact
         id: deployment
