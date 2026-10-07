@@ -199,7 +199,7 @@ jobs:
       - run: pnpm i
 
       - name: Setup OpenHarmony SDK
-        uses: Boshen/setup-ohos-sdk@v1.0.0
+        uses: openharmony-rs/setup-ohos-sdk@v1.0.1
 
       - name: Build OpenHarmony binding
         run: |
