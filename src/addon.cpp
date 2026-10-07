@@ -318,7 +318,7 @@ static Napi::Value EncodeResult_ToJSTemplateLiterals(const Napi::CallbackInfo& i
                 v8::String::ValueView view(isolate, v8_str);
                 is_one_byte = view.is_one_byte();
                 if (is_one_byte) {
-                    out_buf = EscapeBuffer(view.data8(), view.length(), &out_len);
+                    out_buf = EscapeBuffer(reinterpret_cast<const char*>(view.data8()), view.length(), &out_len);
                 } else {
                     out_buf = EscapeBuffer(reinterpret_cast<const char16_t*>(view.data16()), view.length(), &out_len);
                 }
