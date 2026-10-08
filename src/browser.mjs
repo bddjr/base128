@@ -47,19 +47,19 @@ export function encode(input) {
         default:
             throw TypeError("encode: input must be a Uint8Array or Uint8ClampedArray")
     }
-    var il = input.length
+    const il = input.length
         , rem = il % 7
         , fullChunks = (il - rem) / 7
         , out = new Uint8Array(fullChunks * 8 + Math.ceil(rem / 0.875))
-        , ii = 0
-        , oi = 0
         , limit = fullChunks * 7
+    var ii = 0
+        , oi = 0
     while (ii < limit) {
         //     0        1        2        3        4        5        6        7
         // in  00000000 11111111 22222222 33333333 44444444 55555555 66666666
         // out _0000000 _0111111 _1122222 _2223333 _3333444 _4444455 _5555556 _6666666
 
-        var b0 = input[ii++]
+        const b0 = input[ii++]
             , b1 = input[ii++]
             , b2 = input[ii++]
             , b3 = input[ii++]
@@ -76,7 +76,7 @@ export function encode(input) {
         /* 6 */ out[oi++] = 127 & (b5 << 1 | b6 >> 7)
         /* 7 */ out[oi++] = 127 & b6
     }
-    if (rem > 0) {
+    if (rem) {
         let prev = input[ii++]
         out[oi++] = prev >> 1
         for (let r = 1; r < rem; r++) {
@@ -98,15 +98,15 @@ export function decode(input) {
     // out 00000001 11111122 22222333 33334444 44455555 55666666 67777777
     if (typeof input != 'string')
         throw TypeError("decode: input must be a string");
-    var il = input.length
+    const il = input.length
         , rem = il % 8
         , fullChunks = (il - rem) / 8
         , out = new Uint8Array(il * 0.875)
-        , ii = 0
-        , oi = 0
         , limit = fullChunks * 8
+    var ii = 0
+        , oi = 0
     while (ii < limit) {
-        var c0 = input.charCodeAt(ii++)
+        const c0 = input.charCodeAt(ii++)
             , c1 = input.charCodeAt(ii++)
             , c2 = input.charCodeAt(ii++)
             , c3 = input.charCodeAt(ii++)
@@ -123,7 +123,7 @@ export function decode(input) {
         out[oi++] = (c5 << 6) | (c6 >> 1)
         out[oi++] = (c6 << 7) | c7
     }
-    if (rem >= 2) {
+    if (rem > 1) {
         let prev = input.charCodeAt(ii++)
         for (let r = 1; r < rem; r++) {
             const curr = input.charCodeAt(ii++)
