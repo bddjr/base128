@@ -655,8 +655,8 @@ static Napi::Value Decode(const Napi::CallbackInfo& info) {
 template <typename CharT>
 static inline int HexVal(CharT c) {
     if (c >= '0' && c <= '9') return c - '0';
-    char lower = static_cast<char>(c | 32);
-    if (lower >= 'a' && lower <= 'f') return lower - 'a' + 10;
+    c |= 32;
+    if (c >= 'a' && c <= 'f') return c - ('a' - 10);
     return -1;
 }
 
@@ -676,7 +676,7 @@ static void ParseJSTemplateLiteralsImpl(const CharT* input, size_t len, ParsedSt
         if (start == end) return;
         CharT c = input[start];
         if (c == '`') break;
-        if (c != ' ' && (c < '\t' || c > '\r') && static_cast<uint16_t>(c) != 0x00A0 && static_cast<uint16_t>(c) != 0xFEFF) {
+        if (c != ' ' && (c < '\t' || c > '\r') && c != 0xA0 && c != 0xFEFF) {
             return;
         }
     }
@@ -685,13 +685,13 @@ static void ParseJSTemplateLiteralsImpl(const CharT* input, size_t len, ParsedSt
         if (end == start) return;
         CharT c = input[end];
         if (c == '`') break;
-        if (c != ' ' && (c < '\t' || c > '\r') && static_cast<uint16_t>(c) != 0x00A0 && static_cast<uint16_t>(c) != 0xFEFF) {
+        if (c != ' ' && (c < '\t' || c > '\r') && c != 0xA0 && c != 0xFEFF) {
             return;
         }
     }
 
     size_t i = start + 1;
-    size_t cap = (end > start) ? (end - start) : 1;
+    size_t cap = end - start;
 
     char* buf8 = static_cast<char*>(std::malloc(cap));
     if (!buf8) return;
