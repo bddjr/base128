@@ -453,20 +453,12 @@ static Napi::Value Decode(const Napi::CallbackInfo& info) {
     return Napi::Uint8Array::New(env, out_len, ab, 0);
 }
 
-static inline int HexVal(char16_t c) {
-    if (c >= u'0' && c <= u'9') return c - u'0';
-    char16_t lower = c | 32;
-    if (lower >= u'a' && lower <= u'f') return lower - u'a' + 10;
-    return -1;
-}
-
 template <typename CharT>
-static inline uint16_t CharCode(CharT c) {
-    if constexpr (sizeof(CharT) == 1) {
-        return static_cast<uint8_t>(c);
-    } else {
-        return static_cast<uint16_t>(c);
-    }
+static inline int HexVal(CharT c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    char lower = static_cast<char>(c | 32);
+    if (lower >= 'a' && lower <= 'f') return lower - 'a' + 10;
+    return -1;
 }
 
 template <typename CharT>
@@ -478,18 +470,18 @@ static bool ParseJSTemplateLiteralsImpl(const CharT* input, size_t len, std::u16
 
     for (;; start++) {
         if (start == end) return false;
-        uint16_t c = CharCode(input[start]);
-        if (c == u'`') break;
-        if (c != u' ' && (c < u'\t' || c > u'\r') && c != u'\u00A0' && c != u'\uFEFF') {
+        CharT c = input[start];
+        if (c == '`') break;
+        if (c != ' ' && (c < '\t' || c > '\r') && static_cast<uint16_t>(c) != 0x00A0 && static_cast<uint16_t>(c) != 0xFEFF) {
             return false;
         }
     }
 
     for (;; end--) {
         if (end == start) return false;
-        uint16_t c = CharCode(input[end]);
-        if (c == u'`') break;
-        if (c != u' ' && (c < u'\t' || c > u'\r') && c != u'\u00A0' && c != u'\uFEFF') {
+        CharT c = input[end];
+        if (c == '`') break;
+        if (c != ' ' && (c < '\t' || c > '\r') && static_cast<uint16_t>(c) != 0x00A0 && static_cast<uint16_t>(c) != 0xFEFF) {
             return false;
         }
     }
@@ -502,8 +494,8 @@ static bool ParseJSTemplateLiteralsImpl(const CharT* input, size_t len, std::u16
     while (i < end) {
         size_t chunkStart = i;
         while (i < end) {
-            uint16_t c = CharCode(input[i]);
-            if (c == u'\\' || c == u'`' || c == u'$') {
+            CharT c = input[i];
+            if (c == '\\' || c == '`' || c == '$') {
                 break;
             }
             i++;
@@ -523,12 +515,12 @@ static bool ParseJSTemplateLiteralsImpl(const CharT* input, size_t len, std::u16
         }
         if (i >= end) break;
 
-        uint16_t c = CharCode(input[i]);
-        if (c == u'`') {
+        CharT c = input[i];
+        if (c == '`') {
             return false;
         }
-        if (c == u'$') {
-            if (i + 1 < end && CharCode(input[i + 1]) == u'{') {
+        if (c == '$') {
+            if (i + 1 < end && input[i + 1] == '{') {
                 return false;
             }
             out.push_back(u'$');
@@ -536,51 +528,51 @@ static bool ParseJSTemplateLiteralsImpl(const CharT* input, size_t len, std::u16
             continue;
         }
 
-        // c is u'\\'
+        // c is '\\'
         i++;
         if (i >= end) {
             return false;
         }
-        uint16_t next = CharCode(input[i]);
+        CharT next = input[i];
         switch (next) {
-            case u'r': out.push_back(u'\r'); i++; break;
-            case u'n': out.push_back(u'\n'); i++; break;
-            case u't': out.push_back(u'\t'); i++; break;
-            case u'b': out.push_back(u'\b'); i++; break;
-            case u'f': out.push_back(u'\f'); i++; break;
-            case u'v': out.push_back(u'\v'); i++; break;
-            case u'\\': out.push_back(u'\\'); i++; break;
-            case u'`': out.push_back(u'`'); i++; break;
-            case u'\'': out.push_back(u'\''); i++; break;
-            case u'"': out.push_back(u'"'); i++; break;
-            case u'$': out.push_back(u'$'); i++; break;
-            case u'0': {
-                if (i + 1 < end && CharCode(input[i + 1]) >= u'0' && CharCode(input[i + 1]) <= u'9') {
+            case 'r': out.push_back(u'\r'); i++; break;
+            case 'n': out.push_back(u'\n'); i++; break;
+            case 't': out.push_back(u'\t'); i++; break;
+            case 'b': out.push_back(u'\b'); i++; break;
+            case 'f': out.push_back(u'\f'); i++; break;
+            case 'v': out.push_back(u'\v'); i++; break;
+            case '\\': out.push_back(u'\\'); i++; break;
+            case '`': out.push_back(u'`'); i++; break;
+            case '\'': out.push_back(u'\''); i++; break;
+            case '"': out.push_back(u'"'); i++; break;
+            case '$': out.push_back(u'$'); i++; break;
+            case '0': {
+                if (i + 1 < end && input[i + 1] >= '0' && input[i + 1] <= '9') {
                     return false;
                 }
                 out.push_back(u'\0');
                 i++;
                 break;
             }
-            case u'x': {
+            case 'x': {
                 if (i + 2 >= end) return false;
-                int h1 = HexVal(CharCode(input[i + 1]));
+                int h1 = HexVal(input[i + 1]);
                 if (h1 == -1) return false;
-                int h2 = HexVal(CharCode(input[i + 2]));
+                int h2 = HexVal(input[i + 2]);
                 if (h2 == -1) return false;
                 out.push_back(static_cast<char16_t>((h1 << 4) | h2));
                 i += 3;
                 break;
             }
-            case u'u': {
-                if (i + 1 < end && CharCode(input[i + 1]) == u'{') {
+            case 'u': {
+                if (i + 1 < end && input[i + 1] == '{') {
                     size_t startHex = i + 2;
                     uint32_t cp = 0;
                     size_t maxScan = std::min(end, startHex + 7);
                     size_t k = startHex;
                     for (; k < maxScan; k++) {
-                        uint16_t ch = CharCode(input[k]);
-                        if (ch == u'}') {
+                        CharT ch = input[k];
+                        if (ch == '}') {
                             if (k == startHex || cp > 0x10FFFF) {
                                 return false;
                             }
@@ -606,24 +598,24 @@ static bool ParseJSTemplateLiteralsImpl(const CharT* input, size_t len, std::u16
                     break;
                 }
                 if (i + 4 >= end) return false;
-                int h1 = HexVal(CharCode(input[i + 1]));
+                int h1 = HexVal(input[i + 1]);
                 if (h1 == -1) return false;
-                int h2 = HexVal(CharCode(input[i + 2]));
+                int h2 = HexVal(input[i + 2]);
                 if (h2 == -1) return false;
-                int h3 = HexVal(CharCode(input[i + 3]));
+                int h3 = HexVal(input[i + 3]);
                 if (h3 == -1) return false;
-                int h4 = HexVal(CharCode(input[i + 4]));
+                int h4 = HexVal(input[i + 4]);
                 if (h4 == -1) return false;
                 out.push_back(static_cast<char16_t>((h1 << 12) | (h2 << 8) | (h3 << 4) | h4));
                 i += 5;
                 break;
             }
-            case u'\r': {
-                if (i + 1 < end && CharCode(input[i + 1]) == u'\n') i++;
+            case '\r': {
+                if (i + 1 < end && input[i + 1] == '\n') i++;
                 i++;
                 break;
             }
-            case u'\n': {
+            case '\n': {
                 i++;
                 break;
             }
