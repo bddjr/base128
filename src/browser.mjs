@@ -38,9 +38,9 @@ export class EncodeResult {
  */
 export function encode(input) {
     var il = input.length
-        , fullChunks = (il / 7) | 0
+        , fullChunks = Math.floor(il / 7)
         , rem = il % 7
-        , outLen = fullChunks * 8 + (rem > 0 ? (((rem * 8 + 6) / 7) | 0) : 0)
+        , outLen = fullChunks * 8 + (rem > 0 ? Math.floor((rem * 8 + 6) / 7) : 0)
         , out = new Uint8Array(outLen)
         , ii = 0
         , oi = 0
@@ -88,9 +88,9 @@ export function decode(input) {
     // in  _0000000 _1111111 _2222222 _3333333 _4444444 _5555555 _6666666 _7777777
     // out 00000001 11111122 22222333 33334444 44455555 55666666 67777777
     var il = input.length
-        , fullChunks = (il / 8) | 0
+        , fullChunks = Math.floor(il / 8)
         , rem = il % 8
-        , out = new Uint8Array(((il * 7) / 8) | 0)
+        , out = new Uint8Array(Math.floor((il * 7) / 8))
         , ii = 0
         , oi = 0
         , limit = fullChunks * 8
