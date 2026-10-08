@@ -25,8 +25,9 @@ jobs:
             arch: arm64
           - os: macos-latest
             name: darwin-arm64
-          - os: macos-13
+          - os: macos-latest
             name: darwin-x64
+            architecture: x64
     continue-on-error: ${{ matrix.continue-on-error || false }}
     steps:
       - uses: actions/checkout@v6
@@ -35,6 +36,7 @@ jobs:
         with:
           node-version: lts/*
           check-latest: true
+          architecture: ${{ matrix.architecture }}
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
@@ -74,17 +76,21 @@ jobs:
         include:
           - name: linux-x64-musl
             image: node:lts-alpine
+            platform: linux/amd64
             pkg_cmd: apk add --no-cache python3 make g++
           - name: linux-arm64-musl
-            image: arm64v8/node:lts-alpine
+            image: node:lts-alpine
+            platform: linux/arm64
             pkg_cmd: apk add --no-cache python3 make g++
             qemu: true
           - name: linux-ppc64-gnu
-            image: ppc64le/node:lts-bookworm-slim
+            image: node:lts-bookworm-slim
+            platform: linux/ppc64le
             pkg_cmd: apt-get update && apt-get install -y python3 make g++
             qemu: true
           - name: linux-s390x-gnu
-            image: s390x/node:lts-bookworm-slim
+            image: node:lts-bookworm-slim
+            platform: linux/s390x
             pkg_cmd: apt-get update && apt-get install -y python3 make g++
             qemu: true
     continue-on-error: true
@@ -98,6 +104,7 @@ jobs:
       - name: Build in Docker container
         run: |
           docker run --rm \
+            --platform ${{ matrix.platform }} \
             -v "$PWD":/workspace \
             -w /workspace \
             ${{ matrix.image }} \
