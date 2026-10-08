@@ -460,72 +460,76 @@ static inline int HexVal(char16_t c) {
     return -1;
 }
 
-static Napi::Value ParseJSTemplateLiterals(const Napi::CallbackInfo& info) {
-    Napi::Env env = info.Env();
-    if (info.Length() < 1 || !info[0].IsString()) {
-        Napi::TypeError::New(env, "parseJSTemplateLiterals: input must be a string").ThrowAsJavaScriptException();
-        return env.Null();
+template <typename CharT>
+static inline uint16_t CharCode(CharT c) {
+    if constexpr (sizeof(CharT) == 1) {
+        return static_cast<uint8_t>(c);
+    } else {
+        return static_cast<uint16_t>(c);
     }
+}
 
-    auto ThrowSyntaxError = [&env]() {
-        Napi::SyntaxError::New(env, "parseJSTemplateLiterals: invalid input").ThrowAsJavaScriptException();
-        return env.Null();
-    };
-
-    std::u16string input = info[0].As<Napi::String>().Utf16Value();
-
-    size_t len = input.length();
-    if (len < 2) {
-        return ThrowSyntaxError();
-    }
+template <typename CharT>
+static bool ParseJSTemplateLiteralsImpl(const CharT* input, size_t len, std::u16string& out) {
+    if (len < 2) return false;
 
     size_t start = 0;
     size_t end = len - 1;
 
     for (;; start++) {
-        if (start == end) return ThrowSyntaxError();
-        char16_t c = input[start];
+        if (start == end) return false;
+        uint16_t c = CharCode(input[start]);
         if (c == u'`') break;
         if (c != u' ' && (c < u'\t' || c > u'\r') && c != u'\u00A0' && c != u'\uFEFF') {
-            return ThrowSyntaxError();
+            return false;
         }
     }
 
     for (;; end--) {
-        if (end == start) return ThrowSyntaxError();
-        char16_t c = input[end];
+        if (end == start) return false;
+        uint16_t c = CharCode(input[end]);
         if (c == u'`') break;
         if (c != u' ' && (c < u'\t' || c > u'\r') && c != u'\u00A0' && c != u'\uFEFF') {
-            return ThrowSyntaxError();
+            return false;
         }
     }
 
     size_t i = start + 1;
 
-    std::u16string out;
+    out.clear();
     out.reserve(end - i);
 
     while (i < end) {
         size_t chunkStart = i;
         while (i < end) {
-            char16_t c = input[i];
+            uint16_t c = CharCode(input[i]);
             if (c == u'\\' || c == u'`' || c == u'$') {
                 break;
             }
             i++;
         }
         if (i > chunkStart) {
-            out.append(input.data() + chunkStart, i - chunkStart);
+            size_t chunkLen = i - chunkStart;
+            size_t curSize = out.size();
+            out.resize(curSize + chunkLen);
+            char16_t* dst = &out[curSize];
+            if constexpr (sizeof(CharT) == 1) {
+                for (size_t k = 0; k < chunkLen; k++) {
+                    dst[k] = static_cast<uint8_t>(input[chunkStart + k]);
+                }
+            } else {
+                std::memcpy(dst, input + chunkStart, chunkLen * sizeof(char16_t));
+            }
         }
         if (i >= end) break;
 
-        char16_t c = input[i];
+        uint16_t c = CharCode(input[i]);
         if (c == u'`') {
-            return ThrowSyntaxError();
+            return false;
         }
         if (c == u'$') {
-            if (i + 1 < end && input[i + 1] == u'{') {
-                return ThrowSyntaxError();
+            if (i + 1 < end && CharCode(input[i + 1]) == u'{') {
+                return false;
             }
             out.push_back(u'$');
             i++;
@@ -535,9 +539,9 @@ static Napi::Value ParseJSTemplateLiterals(const Napi::CallbackInfo& info) {
         // c is u'\\'
         i++;
         if (i >= end) {
-            return ThrowSyntaxError();
+            return false;
         }
-        char16_t next = input[i];
+        uint16_t next = CharCode(input[i]);
         switch (next) {
             case u'r': out.push_back(u'\r'); i++; break;
             case u'n': out.push_back(u'\n'); i++; break;
@@ -551,34 +555,34 @@ static Napi::Value ParseJSTemplateLiterals(const Napi::CallbackInfo& info) {
             case u'"': out.push_back(u'"'); i++; break;
             case u'$': out.push_back(u'$'); i++; break;
             case u'0': {
-                if (i + 1 < end && input[i + 1] >= u'0' && input[i + 1] <= u'9') {
-                    return ThrowSyntaxError();
+                if (i + 1 < end && CharCode(input[i + 1]) >= u'0' && CharCode(input[i + 1]) <= u'9') {
+                    return false;
                 }
                 out.push_back(u'\0');
                 i++;
                 break;
             }
             case u'x': {
-                if (i + 2 >= end) return ThrowSyntaxError();
-                int h1 = HexVal(input[i + 1]);
-                if (h1 == -1) return ThrowSyntaxError();
-                int h2 = HexVal(input[i + 2]);
-                if (h2 == -1) return ThrowSyntaxError();
+                if (i + 2 >= end) return false;
+                int h1 = HexVal(CharCode(input[i + 1]));
+                if (h1 == -1) return false;
+                int h2 = HexVal(CharCode(input[i + 2]));
+                if (h2 == -1) return false;
                 out.push_back(static_cast<char16_t>((h1 << 4) | h2));
                 i += 3;
                 break;
             }
             case u'u': {
-                if (i + 1 < end && input[i + 1] == u'{') {
+                if (i + 1 < end && CharCode(input[i + 1]) == u'{') {
                     size_t startHex = i + 2;
                     uint32_t cp = 0;
                     size_t maxScan = std::min(end, startHex + 7);
                     size_t k = startHex;
                     for (; k < maxScan; k++) {
-                        char16_t ch = input[k];
+                        uint16_t ch = CharCode(input[k]);
                         if (ch == u'}') {
                             if (k == startHex || cp > 0x10FFFF) {
-                                return ThrowSyntaxError();
+                                return false;
                             }
                             if (cp <= 0xFFFF) {
                                 out.push_back(static_cast<char16_t>(cp));
@@ -592,30 +596,30 @@ static Napi::Value ParseJSTemplateLiterals(const Napi::CallbackInfo& info) {
                         }
                         int hv = HexVal(ch);
                         if (hv == -1) {
-                            return ThrowSyntaxError();
+                            return false;
                         }
                         cp = (cp << 4) | hv;
                     }
                     if (k >= maxScan) {
-                        return ThrowSyntaxError();
+                        return false;
                     }
                     break;
                 }
-                if (i + 4 >= end) return ThrowSyntaxError();
-                int h1 = HexVal(input[i + 1]);
-                if (h1 == -1) return ThrowSyntaxError();
-                int h2 = HexVal(input[i + 2]);
-                if (h2 == -1) return ThrowSyntaxError();
-                int h3 = HexVal(input[i + 3]);
-                if (h3 == -1) return ThrowSyntaxError();
-                int h4 = HexVal(input[i + 4]);
-                if (h4 == -1) return ThrowSyntaxError();
+                if (i + 4 >= end) return false;
+                int h1 = HexVal(CharCode(input[i + 1]));
+                if (h1 == -1) return false;
+                int h2 = HexVal(CharCode(input[i + 2]));
+                if (h2 == -1) return false;
+                int h3 = HexVal(CharCode(input[i + 3]));
+                if (h3 == -1) return false;
+                int h4 = HexVal(CharCode(input[i + 4]));
+                if (h4 == -1) return false;
                 out.push_back(static_cast<char16_t>((h1 << 12) | (h2 << 8) | (h3 << 4) | h4));
                 i += 5;
                 break;
             }
             case u'\r': {
-                if (i + 1 < end && input[i + 1] == u'\n') i++;
+                if (i + 1 < end && CharCode(input[i + 1]) == u'\n') i++;
                 i++;
                 break;
             }
@@ -624,13 +628,59 @@ static Napi::Value ParseJSTemplateLiterals(const Napi::CallbackInfo& info) {
                 break;
             }
             default: {
-                out.push_back(next);
+                out.push_back(static_cast<char16_t>(next));
                 i++;
                 break;
             }
         }
     }
 
+    return true;
+}
+
+static Napi::Value ParseJSTemplateLiterals(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+    if (info.Length() < 1 || !info[0].IsString()) {
+        Napi::TypeError::New(env, "parseJSTemplateLiterals: input must be a string").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+
+    auto ThrowSyntaxError = [&env]() {
+        Napi::SyntaxError::New(env, "parseJSTemplateLiterals: invalid input").ThrowAsJavaScriptException();
+        return env.Null();
+    };
+
+    std::u16string out;
+    bool ok = false;
+
+#ifdef USE_V8_ACCELERATION
+    v8::Isolate* isolate = v8::Isolate::GetCurrent();
+    if (isolate) {
+        napi_value str_val = info[0];
+        v8::Local<v8::Value> v8_val = *reinterpret_cast<v8::Local<v8::Value>*>(&str_val);
+        if (v8_val->IsString()) {
+            v8::Local<v8::String> v8_str = v8_val.As<v8::String>();
+            {
+                v8::String::ValueView view(isolate, v8_str);
+                if (view.is_one_byte()) {
+                    ok = ParseJSTemplateLiteralsImpl(reinterpret_cast<const char*>(view.data8()), view.length(), out);
+                } else {
+                    ok = ParseJSTemplateLiteralsImpl(reinterpret_cast<const char16_t*>(view.data16()), view.length(), out);
+                }
+            }
+            if (!ok) {
+                return ThrowSyntaxError();
+            }
+            return Napi::String::New(env, out.data(), out.size());
+        }
+    }
+#endif
+
+    std::u16string input = info[0].As<Napi::String>().Utf16Value();
+    ok = ParseJSTemplateLiteralsImpl(input.data(), input.length(), out);
+    if (!ok) {
+        return ThrowSyntaxError();
+    }
     return Napi::String::New(env, out.data(), out.size());
 }
 
