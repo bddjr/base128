@@ -34,9 +34,18 @@ export class EncodeResult {
 }
 
 /**
- * @param {Uint8Array} input
+ * @param {Uint8Array | Uint8ClampedArray} input
  */
 export function encode(input) {
+    if (input == null)
+        throw TypeError("encode: input must be a Uint8Array or Uint8ClampedArray")
+    switch (input[Symbol.toStringTag]) {
+        case "Uint8Array":
+        case "Uint8ClampedArray":
+            break
+        default:
+            throw TypeError("encode: input must be a Uint8Array or Uint8ClampedArray")
+    }
     var il = input.length
         , fullChunks = Math.floor(il / 7)
         , rem = il % 7
@@ -87,6 +96,8 @@ export function decode(input) {
     //     0        1        2        3        4        5        6        7
     // in  _0000000 _1111111 _2222222 _3333333 _4444444 _5555555 _6666666 _7777777
     // out 00000001 11111122 22222333 33334444 44455555 55666666 67777777
+    if (typeof input != 'string')
+        throw TypeError("decode: input must be a string");
     var il = input.length
         , fullChunks = Math.floor(il / 8)
         , rem = il % 8

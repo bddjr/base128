@@ -351,10 +351,18 @@ static Napi::Value EncodeResult_ToJSTemplateLiterals(const Napi::CallbackInfo& i
     return MakeUtf16String(env, out_buf, out_len);
 }
 
+static inline bool IsUint8Array(const Napi::Value& val) {
+    if (!val.IsTypedArray()) {
+        return false;
+    }
+    napi_typedarray_type type = val.As<Napi::TypedArray>().TypedArrayType();
+    return type == napi_uint8_array || type == napi_uint8_clamped_array;
+}
+
 static Napi::Value Encode(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
-    if (info.Length() < 1 || !info[0].IsTypedArray()) {
-        Napi::TypeError::New(env, "encode: input must be a Uint8Array").ThrowAsJavaScriptException();
+    if (info.Length() < 1 || !IsUint8Array(info[0])) {
+        Napi::TypeError::New(env, "encode: input must be a Uint8Array or Uint8ClampedArray").ThrowAsJavaScriptException();
         return env.Null();
     }
     Napi::TypedArray input = info[0].As<Napi::TypedArray>();
@@ -400,7 +408,7 @@ static Napi::Value Encode(const Napi::CallbackInfo& info) {
 
 static Napi::Value Decode(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
-    if (info.Length() < 1) {
+    if (info.Length() < 1 || !info[0].IsString()) {
         Napi::TypeError::New(env, "decode: input must be a string").ThrowAsJavaScriptException();
         return env.Null();
     }
@@ -408,21 +416,12 @@ static Napi::Value Decode(const Napi::CallbackInfo& info) {
     size_t il = 0;
     std::string str_holder;
 
-    if (info[0].IsString()) {
-        napi_value str_val = info[0];
-        napi_get_value_string_latin1(env, str_val, nullptr, 0, &il);
-        str_holder.resize(il);
-        size_t copied = 0;
-        napi_get_value_string_latin1(env, str_val, &str_holder[0], il + 1, &copied);
-        in = reinterpret_cast<const uint8_t*>(str_holder.data());
-    } else if (info[0].IsTypedArray()) {
-        Napi::TypedArray ta = info[0].As<Napi::TypedArray>();
-        il = ta.ByteLength();
-        in = reinterpret_cast<const uint8_t*>(ta.ArrayBuffer().Data()) + ta.ByteOffset();
-    } else {
-        Napi::TypeError::New(env, "decode: input must be a string").ThrowAsJavaScriptException();
-        return env.Null();
-    }
+    napi_value str_val = info[0];
+    napi_get_value_string_latin1(env, str_val, nullptr, 0, &il);
+    str_holder.resize(il);
+    size_t copied = 0;
+    napi_get_value_string_latin1(env, str_val, &str_holder[0], il + 1, &copied);
+    in = reinterpret_cast<const uint8_t*>(str_holder.data());
 
     size_t out_len = (il * 7) / 8;
     Napi::ArrayBuffer ab = Napi::ArrayBuffer::New(env, out_len);
