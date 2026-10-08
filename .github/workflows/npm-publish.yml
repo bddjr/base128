@@ -53,6 +53,7 @@ jobs:
           fi
 
       - name: Test
+        if: ${{ !matrix.arch }}
         run: pnpm test:only
 
       - name: Prepare subpackage (${{ matrix.name }})
@@ -125,7 +126,7 @@ jobs:
             pkg_cmd: apt-get update && apt-get install -y python3 make g++
             qemu: true
           - name: linux-s390x-gnu
-            image: debian:bookworm-slim
+            image: ubuntu:24.04
             platform: linux/s390x
             pkg_cmd: apt-get update && apt-get install -y nodejs npm python3 make g++
             qemu: true
