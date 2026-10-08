@@ -8,7 +8,7 @@ export class EncodeResult {
     }
     toJSTemplateLiterals() {
         return '`' + this.toString().replace(
-            /[\r\\`]|\0\d?|\$\{|<\/script/g,
+            /[\r\\`]|\0\d?|\$\{|<\/script/gi,
             (match) => {
                 switch (match) {
                     case '\r': return '\\r';
@@ -26,7 +26,7 @@ export class EncodeResult {
                     case '\x008': return '\\x008';
                     case '\x009': return '\\x009';
                     case '${': return '\\${';
-                    default: return '<\\/script';
+                    default: return '<\\/' + match.slice(2);
                 }
             }
         ) + '`'

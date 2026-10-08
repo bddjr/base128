@@ -220,13 +220,18 @@ static inline char* EscapeBytesToTemplateLiterals(const char* src, size_t len, s
                 break;
             case '<':
                 if (i + 7 < len &&
-                    src[i + 1] == '/' && src[i + 2] == 's' &&
-                    src[i + 3] == 'c' && src[i + 4] == 'r' &&
-                    src[i + 5] == 'i' && src[i + 6] == 'p' &&
-                    src[i + 7] == 't') {
-                    const char tag[] = { '<', '\\', '/', 's', 'c', 'r', 'i', 'p', 't' };
-                    std::memcpy(dst, tag, sizeof(tag));
-                    dst += 9;
+                    src[i + 1] == '/' &&
+                    (src[i + 2] == 's' || src[i + 2] == 'S') &&
+                    (src[i + 3] == 'c' || src[i + 3] == 'C') &&
+                    (src[i + 4] == 'r' || src[i + 4] == 'R') &&
+                    (src[i + 5] == 'i' || src[i + 5] == 'I') &&
+                    (src[i + 6] == 'p' || src[i + 6] == 'P') &&
+                    (src[i + 7] == 't' || src[i + 7] == 'T')) {
+                    *dst++ = '<';
+                    *dst++ = '\\';
+                    *dst++ = '/';
+                    std::memcpy(dst, src + i + 2, 6);
+                    dst += 6;
                     i += 8;
                 } else {
                     *dst++ = '<'; i++;
@@ -381,13 +386,19 @@ static inline void EscapeToTemplateLiterals(const CharT* src, size_t len, Parsed
                     break;
                 case '<':
                     if (i + 7 < len &&
-                        src[i + 1] == '/' && src[i + 2] == 's' &&
-                        src[i + 3] == 'c' && src[i + 4] == 'r' &&
-                        src[i + 5] == 'i' && src[i + 6] == 'p' &&
-                        src[i + 7] == 't') {
-                        const char tag[] = { '<', '\\', '/', 's', 'c', 'r', 'i', 'p', 't' };
-                        std::memcpy(buf8 + out_len, tag, sizeof(tag));
-                        out_len += 9;
+                        src[i + 1] == '/' &&
+                        (src[i + 2] == 's' || src[i + 2] == 'S') &&
+                        (src[i + 3] == 'c' || src[i + 3] == 'C') &&
+                        (src[i + 4] == 'r' || src[i + 4] == 'R') &&
+                        (src[i + 5] == 'i' || src[i + 5] == 'I') &&
+                        (src[i + 6] == 'p' || src[i + 6] == 'P') &&
+                        (src[i + 7] == 't' || src[i + 7] == 'T')) {
+                        buf8[out_len++] = '<';
+                        buf8[out_len++] = '\\';
+                        buf8[out_len++] = '/';
+                        for (size_t k = 2; k <= 7; k++) {
+                            buf8[out_len++] = static_cast<char>(src[i + k]);
+                        }
                         i += 8;
                     } else {
                         buf8[out_len++] = '<'; i++;
@@ -424,13 +435,19 @@ static inline void EscapeToTemplateLiterals(const CharT* src, size_t len, Parsed
                     break;
                 case '<':
                     if (i + 7 < len &&
-                        src[i + 1] == '/' && src[i + 2] == 's' &&
-                        src[i + 3] == 'c' && src[i + 4] == 'r' &&
-                        src[i + 5] == 'i' && src[i + 6] == 'p' &&
-                        src[i + 7] == 't') {
-                        const char16_t tag[] = { u'<', u'\\', u'/', u's', u'c', u'r', u'i', u'p', u't' };
-                        std::memcpy(buf16 + out_len, tag, sizeof(tag));
-                        out_len += 9;
+                        src[i + 1] == '/' &&
+                        (src[i + 2] == 's' || src[i + 2] == 'S') &&
+                        (src[i + 3] == 'c' || src[i + 3] == 'C') &&
+                        (src[i + 4] == 'r' || src[i + 4] == 'R') &&
+                        (src[i + 5] == 'i' || src[i + 5] == 'I') &&
+                        (src[i + 6] == 'p' || src[i + 6] == 'P') &&
+                        (src[i + 7] == 't' || src[i + 7] == 'T')) {
+                        buf16[out_len++] = u'<';
+                        buf16[out_len++] = u'\\';
+                        buf16[out_len++] = u'/';
+                        for (size_t k = 2; k <= 7; k++) {
+                            buf16[out_len++] = static_cast<char16_t>(src[i + k]);
+                        }
                         i += 8;
                     } else {
                         buf16[out_len++] = u'<'; i++;
