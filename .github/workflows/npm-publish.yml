@@ -25,9 +25,6 @@ jobs:
             arch: arm64
           - os: macos-latest
             name: darwin-arm64
-          - os: macos-latest
-            name: darwin-x64
-            architecture: x64
     continue-on-error: ${{ matrix.continue-on-error || false }}
     steps:
       - uses: actions/checkout@v6
@@ -36,7 +33,6 @@ jobs:
         with:
           node-version: lts/*
           check-latest: true
-          architecture: ${{ matrix.architecture }}
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
@@ -44,6 +40,8 @@ jobs:
           version: "12"
 
       - run: pnpm i
+
+      - run: pnpm run check
 
       - name: Build native addon
         shell: bash
@@ -55,8 +53,7 @@ jobs:
           fi
 
       - name: Test
-        if: ${{ !matrix.arch }}
-        run: pnpm test:nobuild
+        run: pnpm test:only
 
       - name: Prepare subpackage (${{ matrix.name }})
         run: node scripts/prepare-subpackage.mjs ${{ matrix.name }}
@@ -66,6 +63,45 @@ jobs:
         with:
           name: binding-${{ matrix.name }}
           path: npm/${{ matrix.name }}/
+
+  build-darwin-x64:
+    name: build (darwin-x64)
+    runs-on: macos-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+          check-latest: true
+          architecture: x64
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: "12"
+
+      - run: |
+          pnpm i typescript@6
+          pnpm i
+
+      - run: pnpm run check
+
+      - name: Build native addon
+        run: pnpm run build
+
+      - name: Test
+        run: pnpm test:only
+
+      - name: Prepare subpackage (darwin-x64)
+        run: node scripts/prepare-subpackage.mjs darwin-x64
+
+      - name: Upload binding (darwin-x64)
+        uses: actions/upload-artifact@v4
+        with:
+          name: binding-darwin-x64
+          path: npm/darwin-x64/
 
   build-container:
     name: build (${{ matrix.name }})
@@ -89,9 +125,9 @@ jobs:
             pkg_cmd: apt-get update && apt-get install -y python3 make g++
             qemu: true
           - name: linux-s390x-gnu
-            image: node:lts-bookworm-slim
+            image: debian:bookworm-slim
             platform: linux/s390x
-            pkg_cmd: apt-get update && apt-get install -y python3 make g++
+            pkg_cmd: apt-get update && apt-get install -y nodejs npm python3 make g++
             qemu: true
     continue-on-error: true
     steps:
@@ -134,13 +170,13 @@ jobs:
         uses: cross-platform-actions/action@v0.26.0
         with:
           operating_system: freebsd
-          version: '14.0'
+          version: "14.0"
           shell: bash
           run: |
             sudo pkg install -y node npm python3
             sudo npm install -g pnpm --no-ignore-scripts
             pnpm i
-            pnpm test
+            pnpm test:only
             node scripts/prepare-subpackage.mjs freebsd-x64
 
       - name: Upload binding (freebsd-x64)
@@ -227,7 +263,13 @@ jobs:
           path: npm/openharmony-arm64/
 
   publish-npm:
-    needs: [build-native, build-container, build-freebsd, build-android, build-openharmony]
+    needs:
+      - build-native
+      - build-darwin-x64
+      - build-container
+      - build-freebsd
+      - build-android
+      - build-openharmony
     if: ${{ always() && !cancelled() && needs.build-native.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
