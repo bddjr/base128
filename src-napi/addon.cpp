@@ -453,10 +453,11 @@ static Napi::Value Decode(const Napi::CallbackInfo& info) {
     return Napi::Uint8Array::New(env, out_len, ab, 0);
 }
 
-static inline bool IsHexDigit(char16_t c) {
-    return (c >= u'0' && c <= u'9') ||
-           (c >= u'a' && c <= u'f') ||
-           (c >= u'A' && c <= u'F');
+static inline int HexVal(char16_t c) {
+    if (c >= u'0' && c <= u'9') return c - u'0';
+    char16_t lower = c | 32;
+    if (lower >= u'a' && lower <= u'f') return lower - u'a' + 10;
+    return -1;
 }
 
 static Napi::Value ParseJSTemplateLiterals(const Napi::CallbackInfo& info) {
@@ -473,40 +474,40 @@ static Napi::Value ParseJSTemplateLiterals(const Napi::CallbackInfo& info) {
 
     std::u16string input = info[0].As<Napi::String>().Utf16Value();
 
-    // Trim whitespace
+    size_t len = input.length();
+    if (len < 2) {
+        return ThrowSyntaxError();
+    }
+
     size_t start = 0;
-    while (start < input.length() && (
-        input[start] == u' ' || input[start] == u'\t' ||
-        input[start] == u'\r' || input[start] == u'\n' ||
-        input[start] == u'\v' || input[start] == u'\f' ||
-        input[start] == 0x00A0 || input[start] == 0xFEFF)) {
-        start++;
-    }
-    size_t end = input.length();
-    while (end > start && (
-        input[end - 1] == u' ' || input[end - 1] == u'\t' ||
-        input[end - 1] == u'\r' || input[end - 1] == u'\n' ||
-        input[end - 1] == u'\v' || input[end - 1] == u'\f' ||
-        input[end - 1] == 0x00A0 || input[end - 1] == 0xFEFF)) {
-        end--;
+    size_t end = len - 1;
+
+    for (;; start++) {
+        if (start == end) return ThrowSyntaxError();
+        char16_t c = input[start];
+        if (c == u'`') break;
+        if (c != u' ' && (c < u'\t' || c > u'\r') && c != u'\u00A0' && c != u'\uFEFF') {
+            return ThrowSyntaxError();
+        }
     }
 
-    if (end - start < 2) {
-        return ThrowSyntaxError();
-    }
-    if (input[start] != u'`' || input[end - 1] != u'`') {
-        return ThrowSyntaxError();
+    for (;; end--) {
+        if (end == start) return ThrowSyntaxError();
+        char16_t c = input[end];
+        if (c == u'`') break;
+        if (c != u' ' && (c < u'\t' || c > u'\r') && c != u'\u00A0' && c != u'\uFEFF') {
+            return ThrowSyntaxError();
+        }
     }
 
-    size_t loopMaxIndex = end - 1;
     size_t i = start + 1;
 
     std::u16string out;
-    out.reserve(loopMaxIndex - i);
+    out.reserve(end - i);
 
-    while (i < loopMaxIndex) {
+    while (i < end) {
         size_t chunkStart = i;
-        while (i < loopMaxIndex) {
+        while (i < end) {
             char16_t c = input[i];
             if (c == u'\\' || c == u'`' || c == u'$') {
                 break;
@@ -516,14 +517,14 @@ static Napi::Value ParseJSTemplateLiterals(const Napi::CallbackInfo& info) {
         if (i > chunkStart) {
             out.append(input.data() + chunkStart, i - chunkStart);
         }
-        if (i >= loopMaxIndex) break;
+        if (i >= end) break;
 
         char16_t c = input[i];
         if (c == u'`') {
             return ThrowSyntaxError();
         }
         if (c == u'$') {
-            if (i + 1 < loopMaxIndex && input[i + 1] == u'{') {
+            if (i + 1 < end && input[i + 1] == u'{') {
                 return ThrowSyntaxError();
             }
             out.push_back(u'$');
@@ -533,7 +534,7 @@ static Napi::Value ParseJSTemplateLiterals(const Napi::CallbackInfo& info) {
 
         // c is u'\\'
         i++;
-        if (i >= loopMaxIndex) {
+        if (i >= end) {
             return ThrowSyntaxError();
         }
         char16_t next = input[i];
@@ -550,7 +551,7 @@ static Napi::Value ParseJSTemplateLiterals(const Napi::CallbackInfo& info) {
             case u'"': out.push_back(u'"'); i++; break;
             case u'$': out.push_back(u'$'); i++; break;
             case u'0': {
-                if (i + 1 < loopMaxIndex && input[i + 1] >= u'0' && input[i + 1] <= u'9') {
+                if (i + 1 < end && input[i + 1] >= u'0' && input[i + 1] <= u'9') {
                     return ThrowSyntaxError();
                 }
                 out.push_back(u'\0');
@@ -558,58 +559,63 @@ static Napi::Value ParseJSTemplateLiterals(const Napi::CallbackInfo& info) {
                 break;
             }
             case u'x': {
-                if (i + 2 < loopMaxIndex && IsHexDigit(input[i + 1]) && IsHexDigit(input[i + 2])) {
-                    char hex[3] = { static_cast<char>(input[i + 1]), static_cast<char>(input[i + 2]), 0 };
-                    out.push_back(static_cast<char16_t>(strtoul(hex, nullptr, 16)));
-                    i += 3;
-                } else {
-                    return ThrowSyntaxError();
-                }
+                if (i + 2 >= end) return ThrowSyntaxError();
+                int h1 = HexVal(input[i + 1]);
+                if (h1 == -1) return ThrowSyntaxError();
+                int h2 = HexVal(input[i + 2]);
+                if (h2 == -1) return ThrowSyntaxError();
+                out.push_back(static_cast<char16_t>((h1 << 4) | h2));
+                i += 3;
                 break;
             }
             case u'u': {
-                if (i + 1 < loopMaxIndex && input[i + 1] == u'{') {
-                    size_t closeBrace = input.find(u'}', i + 2);
-                    if (closeBrace != std::u16string::npos && closeBrace <= loopMaxIndex && closeBrace - (i + 2) <= 6) {
-                        std::string hex;
-                        for (size_t k = i + 2; k < closeBrace; k++) {
-                            if (!IsHexDigit(input[k])) { hex.clear(); break; }
-                            hex.push_back(static_cast<char>(input[k]));
-                        }
-                        if (!hex.empty()) {
-                            uint32_t cp = static_cast<uint32_t>(strtoul(hex.c_str(), nullptr, 16));
+                if (i + 1 < end && input[i + 1] == u'{') {
+                    size_t startHex = i + 2;
+                    uint32_t cp = 0;
+                    size_t maxScan = std::min(end, startHex + 7);
+                    size_t k = startHex;
+                    for (; k < maxScan; k++) {
+                        char16_t ch = input[k];
+                        if (ch == u'}') {
+                            if (k == startHex || cp > 0x10FFFF) {
+                                return ThrowSyntaxError();
+                            }
                             if (cp <= 0xFFFF) {
                                 out.push_back(static_cast<char16_t>(cp));
-                            } else if (cp <= 0x10FFFF) {
+                            } else {
                                 cp -= 0x10000;
                                 out.push_back(static_cast<char16_t>(0xD800 + (cp >> 10)));
                                 out.push_back(static_cast<char16_t>(0xDC00 + (cp & 0x3FF)));
-                            } else {
-                                return ThrowSyntaxError();
                             }
-                            i = closeBrace + 1;
-                        } else {
+                            i = k + 1;
+                            break;
+                        }
+                        int hv = HexVal(ch);
+                        if (hv == -1) {
                             return ThrowSyntaxError();
                         }
-                    } else {
+                        cp = (cp << 4) | hv;
+                    }
+                    if (k >= maxScan) {
                         return ThrowSyntaxError();
                     }
-                } else if (i + 4 < loopMaxIndex &&
-                           IsHexDigit(input[i + 1]) && IsHexDigit(input[i + 2]) &&
-                           IsHexDigit(input[i + 3]) && IsHexDigit(input[i + 4])) {
-                    char hex[5] = {
-                        static_cast<char>(input[i + 1]), static_cast<char>(input[i + 2]),
-                        static_cast<char>(input[i + 3]), static_cast<char>(input[i + 4]), 0
-                    };
-                    out.push_back(static_cast<char16_t>(strtoul(hex, nullptr, 16)));
-                    i += 5;
-                } else {
-                    return ThrowSyntaxError();
+                    break;
                 }
+                if (i + 4 >= end) return ThrowSyntaxError();
+                int h1 = HexVal(input[i + 1]);
+                if (h1 == -1) return ThrowSyntaxError();
+                int h2 = HexVal(input[i + 2]);
+                if (h2 == -1) return ThrowSyntaxError();
+                int h3 = HexVal(input[i + 3]);
+                if (h3 == -1) return ThrowSyntaxError();
+                int h4 = HexVal(input[i + 4]);
+                if (h4 == -1) return ThrowSyntaxError();
+                out.push_back(static_cast<char16_t>((h1 << 12) | (h2 << 8) | (h3 << 4) | h4));
+                i += 5;
                 break;
             }
             case u'\r': {
-                if (i + 1 < loopMaxIndex && input[i + 1] == u'\n') i++;
+                if (i + 1 < end && input[i + 1] == u'\n') i++;
                 i++;
                 break;
             }
