@@ -88,19 +88,33 @@ static Napi::Value MakeUtf16String(napi_env env, char16_t* buf, size_t len) {
     return fallback;
 }
 
-template <typename CharT>
-static inline CharT* EscapeToTemplateLiterals(const CharT* src, size_t len, size_t* out_len) {
-    size_t cap = len + (len / 4) + 128;
-    CharT* out_buf = static_cast<CharT*>(std::malloc(cap * sizeof(CharT)));
-    CharT* dst = out_buf;
-    *dst++ = static_cast<CharT>('`');
+struct ParsedStringResult {
+    void* buf = nullptr;
+    size_t len = 0;
+    bool is_one_byte = true;
+    bool error = false;
+};
 
-    size_t i = 0;
-    while (i < len) {
-        size_t start = i;
+template <typename CharT>
+static inline void EscapeToTemplateLiterals(const CharT* src, size_t len, ParsedStringResult& res) {
+    res.error = true;
+    res.buf = nullptr;
+    res.len = 0;
+    res.is_one_byte = true;
+
+    size_t cap = len + (len / 4) + 128;
+    char* buf8 = static_cast<char*>(std::malloc(cap));
+    if (!buf8) return;
+
+    if constexpr (sizeof(CharT) == 1) {
+        char* dst = buf8;
+        *dst++ = '`';
+
+        size_t i = 0;
+        while (i < len) {
+            size_t start = i;
 
 #if defined(__x86_64__) || defined(_M_X64)
-        if constexpr (sizeof(CharT) == 1) {
             const __m128i v0  = _mm_set1_epi8(0);
             const __m128i v13 = _mm_set1_epi8(13);
             const __m128i v36 = _mm_set1_epi8(36);
@@ -131,9 +145,7 @@ static inline CharT* EscapeToTemplateLiterals(const CharT* src, size_t len, size
                 }
                 i += 16;
             }
-        }
 #elif defined(__aarch64__) || defined(_M_ARM64)
-        if constexpr (sizeof(CharT) == 1) {
             const uint8x16_t v0  = vdupq_n_u8(0);
             const uint8x16_t v13 = vdupq_n_u8(13);
             const uint8x16_t v36 = vdupq_n_u8(36);
@@ -156,12 +168,149 @@ static inline CharT* EscapeToTemplateLiterals(const CharT* src, size_t len, size
                 }
                 i += 16;
             }
-        }
 #endif
 
+            while (i < len) {
+                CharT c = src[i];
+                if (kIsSpecialChar[static_cast<uint8_t>(c)]) break;
+                i++;
+            }
+
+            size_t chunk_len = i - start;
+            if (chunk_len > 0) {
+                if (static_cast<size_t>(dst - buf8) + chunk_len + 32 > cap) {
+                    size_t offset = dst - buf8;
+                    cap = cap * 2 + chunk_len + 128;
+                    char* nb = static_cast<char*>(std::realloc(buf8, cap));
+                    if (!nb) { std::free(buf8); return; }
+                    buf8 = nb;
+                    dst = buf8 + offset;
+                }
+                std::memcpy(dst, src + start, chunk_len);
+                dst += chunk_len;
+            }
+            if (i >= len) break;
+
+            if (static_cast<size_t>(dst - buf8) + 16 > cap) {
+                size_t offset = dst - buf8;
+                cap = cap * 2 + 128;
+                char* nb = static_cast<char*>(std::realloc(buf8, cap));
+                if (!nb) { std::free(buf8); return; }
+                buf8 = nb;
+                dst = buf8 + offset;
+            }
+
+            CharT c = src[i];
+            switch (c) {
+                case '\r':
+                    *dst++ = '\\'; *dst++ = 'r'; i++; break;
+                case '\\':
+                    *dst++ = '\\'; *dst++ = '\\'; i++; break;
+                case '`':
+                    *dst++ = '\\'; *dst++ = '`'; i++; break;
+                case '\0':
+                    if (i + 1 < len && src[i + 1] >= '0' && src[i + 1] <= '9') {
+                        *dst++ = '\\'; *dst++ = 'x'; *dst++ = '0'; *dst++ = '0';
+                        *dst++ = static_cast<char>(src[i + 1]);
+                        i += 2;
+                    } else {
+                        *dst++ = '\\'; *dst++ = '0'; i++;
+                    }
+                    break;
+                case '$':
+                    if (i + 1 < len && src[i + 1] == '{') {
+                        *dst++ = '\\'; *dst++ = '$'; *dst++ = '{';
+                        i += 2;
+                    } else {
+                        *dst++ = '$'; i++;
+                    }
+                    break;
+                case '<':
+                    if (i + 7 < len &&
+                        src[i + 1] == '/' && src[i + 2] == 's' &&
+                        src[i + 3] == 'c' && src[i + 4] == 'r' &&
+                        src[i + 5] == 'i' && src[i + 6] == 'p' &&
+                        src[i + 7] == 't') {
+                        const char tag[] = { '<', '\\', '/', 's', 'c', 'r', 'i', 'p', 't' };
+                        std::memcpy(dst, tag, sizeof(tag));
+                        dst += 9;
+                        i += 8;
+                    } else {
+                        *dst++ = '<'; i++;
+                    }
+                    break;
+                default:
+                    *dst++ = static_cast<char>(c); i++; break;
+            }
+        }
+        if (static_cast<size_t>(dst - buf8) + 2 > cap) {
+            size_t offset = dst - buf8;
+            cap += 16;
+            char* nb = static_cast<char*>(std::realloc(buf8, cap));
+            if (!nb) { std::free(buf8); return; }
+            buf8 = nb;
+            dst = buf8 + offset;
+        }
+        *dst++ = '`';
+        res.buf = buf8;
+        res.len = dst - buf8;
+        res.is_one_byte = true;
+        res.error = false;
+        return;
+    }
+
+    char16_t* buf16 = nullptr;
+    bool is_one_byte = true;
+    size_t out_len = 0;
+
+    auto switchToTwoByte = [&]() -> bool {
+        buf16 = static_cast<char16_t*>(std::malloc(cap * sizeof(char16_t)));
+        if (!buf16) {
+            std::free(buf8);
+            buf8 = nullptr;
+            return false;
+        }
+        for (size_t k = 0; k < out_len; k++) {
+            buf16[k] = static_cast<uint8_t>(buf8[k]);
+        }
+        std::free(buf8);
+        buf8 = nullptr;
+        is_one_byte = false;
+        return true;
+    };
+
+    auto ensureCap = [&](size_t needed) -> bool {
+        if (out_len + needed > cap) {
+            cap = cap * 2 + needed + 128;
+            if (is_one_byte) {
+                char* nb = static_cast<char*>(std::realloc(buf8, cap));
+                if (!nb) {
+                    std::free(buf8);
+                    buf8 = nullptr;
+                    return false;
+                }
+                buf8 = nb;
+            } else {
+                char16_t* nb = static_cast<char16_t*>(std::realloc(buf16, cap * sizeof(char16_t)));
+                if (!nb) {
+                    std::free(buf16);
+                    buf16 = nullptr;
+                    return false;
+                }
+                buf16 = nb;
+            }
+        }
+        return true;
+    };
+
+    buf8[out_len++] = '`';
+    size_t i = 0;
+    while (i < len) {
+        size_t start = i;
         while (i < len) {
             CharT c = src[i];
-            if constexpr (sizeof(CharT) == 1) {
+            if (is_one_byte) {
+                if (static_cast<uint16_t>(c) > 255) break;
                 if (kIsSpecialChar[static_cast<uint8_t>(c)]) break;
             } else {
                 if (c <= 255 && kIsSpecialChar[static_cast<uint8_t>(c)]) break;
@@ -171,70 +320,128 @@ static inline CharT* EscapeToTemplateLiterals(const CharT* src, size_t len, size
 
         size_t chunk_len = i - start;
         if (chunk_len > 0) {
-            if (static_cast<size_t>(dst - out_buf) + chunk_len + 32 > cap) {
-                size_t offset = dst - out_buf;
-                cap = cap * 2 + chunk_len + 128;
-                out_buf = static_cast<CharT*>(std::realloc(out_buf, cap * sizeof(CharT)));
-                dst = out_buf + offset;
+            if (!ensureCap(chunk_len + 32)) return;
+            if (is_one_byte) {
+                for (size_t k = 0; k < chunk_len; k++) {
+                    buf8[out_len + k] = static_cast<char>(src[start + k]);
+                }
+            } else {
+                std::memcpy(buf16 + out_len, src + start, chunk_len * sizeof(char16_t));
             }
-            std::memcpy(dst, src + start, chunk_len * sizeof(CharT));
-            dst += chunk_len;
+            out_len += chunk_len;
         }
         if (i >= len) break;
 
-        if (static_cast<size_t>(dst - out_buf) + 16 > cap) {
-            size_t offset = dst - out_buf;
-            cap = cap * 2 + 128;
-            out_buf = static_cast<CharT*>(std::realloc(out_buf, cap * sizeof(CharT)));
-            dst = out_buf + offset;
+        if (is_one_byte && static_cast<uint16_t>(src[i]) > 255) {
+            if (!switchToTwoByte()) return;
+            if (!ensureCap(16)) return;
+            buf16[out_len++] = src[i];
+            i++;
+            continue;
         }
 
+        if (!ensureCap(16)) return;
         CharT c = src[i];
-        switch (c) {
-            case '\r':
-                *dst++ = '\\'; *dst++ = 'r'; i++; break;
-            case '\\':
-                *dst++ = '\\'; *dst++ = '\\'; i++; break;
-            case '`':
-                *dst++ = '\\'; *dst++ = '`'; i++; break;
-            case '\0':
-                if (i + 1 < len && src[i + 1] >= '0' && src[i + 1] <= '9') {
-                    *dst++ = '\\'; *dst++ = 'x'; *dst++ = '0'; *dst++ = '0';
-                    *dst++ = src[i + 1];
-                    i += 2;
-                } else {
-                    *dst++ = '\\'; *dst++ = '0'; i++;
-                }
-                break;
-            case '$':
-                if (i + 1 < len && src[i + 1] == '{') {
-                    *dst++ = '\\'; *dst++ = '$'; *dst++ = '{';
-                    i += 2;
-                } else {
-                    *dst++ = '$'; i++;
-                }
-                break;
-            case '<':
-                if (i + 7 < len &&
-                    src[i + 1] == '/' && src[i + 2] == 's' &&
-                    src[i + 3] == 'c' && src[i + 4] == 'r' &&
-                    src[i + 5] == 'i' && src[i + 6] == 'p' &&
-                    src[i + 7] == 't') {
-                    const CharT tag[] = { '<', '\\', '/', 's', 'c', 'r', 'i', 'p', 't' };
-                    std::memcpy(dst, tag, sizeof(tag));
-                    dst += 9;
-                    i += 8;
-                } else {
-                    *dst++ = '<'; i++;
-                }
-                break;
-            default:
-                *dst++ = c; i++; break;
+        if (is_one_byte) {
+            switch (c) {
+                case '\r':
+                    buf8[out_len++] = '\\'; buf8[out_len++] = 'r'; i++; break;
+                case '\\':
+                    buf8[out_len++] = '\\'; buf8[out_len++] = '\\'; i++; break;
+                case '`':
+                    buf8[out_len++] = '\\'; buf8[out_len++] = '`'; i++; break;
+                case '\0':
+                    if (i + 1 < len && src[i + 1] >= '0' && src[i + 1] <= '9') {
+                        buf8[out_len++] = '\\'; buf8[out_len++] = 'x';
+                        buf8[out_len++] = '0';  buf8[out_len++] = '0';
+                        buf8[out_len++] = static_cast<char>(src[i + 1]);
+                        i += 2;
+                    } else {
+                        buf8[out_len++] = '\\'; buf8[out_len++] = '0'; i++;
+                    }
+                    break;
+                case '$':
+                    if (i + 1 < len && src[i + 1] == '{') {
+                        buf8[out_len++] = '\\'; buf8[out_len++] = '$'; buf8[out_len++] = '{';
+                        i += 2;
+                    } else {
+                        buf8[out_len++] = '$'; i++;
+                    }
+                    break;
+                case '<':
+                    if (i + 7 < len &&
+                        src[i + 1] == '/' && src[i + 2] == 's' &&
+                        src[i + 3] == 'c' && src[i + 4] == 'r' &&
+                        src[i + 5] == 'i' && src[i + 6] == 'p' &&
+                        src[i + 7] == 't') {
+                        const char tag[] = { '<', '\\', '/', 's', 'c', 'r', 'i', 'p', 't' };
+                        std::memcpy(buf8 + out_len, tag, sizeof(tag));
+                        out_len += 9;
+                        i += 8;
+                    } else {
+                        buf8[out_len++] = '<'; i++;
+                    }
+                    break;
+                default:
+                    buf8[out_len++] = static_cast<char>(c); i++; break;
+            }
+        } else {
+            switch (c) {
+                case '\r':
+                    buf16[out_len++] = u'\\'; buf16[out_len++] = u'r'; i++; break;
+                case '\\':
+                    buf16[out_len++] = u'\\'; buf16[out_len++] = u'\\'; i++; break;
+                case '`':
+                    buf16[out_len++] = u'\\'; buf16[out_len++] = u'`'; i++; break;
+                case '\0':
+                    if (i + 1 < len && src[i + 1] >= '0' && src[i + 1] <= '9') {
+                        buf16[out_len++] = u'\\'; buf16[out_len++] = u'x';
+                        buf16[out_len++] = u'0';  buf16[out_len++] = u'0';
+                        buf16[out_len++] = static_cast<char16_t>(src[i + 1]);
+                        i += 2;
+                    } else {
+                        buf16[out_len++] = u'\\'; buf16[out_len++] = u'0'; i++;
+                    }
+                    break;
+                case '$':
+                    if (i + 1 < len && src[i + 1] == '{') {
+                        buf16[out_len++] = u'\\'; buf16[out_len++] = u'$'; buf16[out_len++] = u'{';
+                        i += 2;
+                    } else {
+                        buf16[out_len++] = u'$'; i++;
+                    }
+                    break;
+                case '<':
+                    if (i + 7 < len &&
+                        src[i + 1] == '/' && src[i + 2] == 's' &&
+                        src[i + 3] == 'c' && src[i + 4] == 'r' &&
+                        src[i + 5] == 'i' && src[i + 6] == 'p' &&
+                        src[i + 7] == 't') {
+                        const char16_t tag[] = { u'<', u'\\', u'/', u's', u'c', u'r', u'i', u'p', u't' };
+                        std::memcpy(buf16 + out_len, tag, sizeof(tag));
+                        out_len += 9;
+                        i += 8;
+                    } else {
+                        buf16[out_len++] = u'<'; i++;
+                    }
+                    break;
+                default:
+                    buf16[out_len++] = static_cast<char16_t>(c); i++; break;
+            }
         }
     }
-    *dst++ = static_cast<CharT>('`');
-    *out_len = dst - out_buf;
-    return out_buf;
+
+    if (!ensureCap(2)) return;
+    if (is_one_byte) {
+        buf8[out_len++] = '`';
+        res.buf = buf8;
+    } else {
+        buf16[out_len++] = u'`';
+        res.buf = buf16;
+    }
+    res.len = out_len;
+    res.is_one_byte = is_one_byte;
+    res.error = false;
 }
 
 static Napi::Value EncodeResult_Constructor(const Napi::CallbackInfo& info) {
@@ -281,13 +488,14 @@ static Napi::Value EncodeResult_ToJSTemplateLiterals(const Napi::CallbackInfo& i
             Napi::TypedArray ta = bytesVal.As<Napi::TypedArray>();
             const char* data = reinterpret_cast<const char*>(ta.ArrayBuffer().Data()) + ta.ByteOffset();
             size_t len = ta.ByteLength();
-            size_t out_len = 0;
-            char* out_buf = EscapeToTemplateLiterals(data, len, &out_len);
-            return MakeLatin1String(env, out_buf, out_len);
+            ParsedStringResult res;
+            EscapeToTemplateLiterals(data, len, res);
+            if (res.error) return env.Null();
+            return MakeLatin1String(env, static_cast<char*>(res.buf), res.len);
         }
     }
 
-    // String path: read uniformly as UTF-8
+    // String path: read uniformly
     napi_value strVal = self;
     if (!self.IsString()) {
         Napi::Value strRes = self.ToObject().Get("toString").As<Napi::Function>().Call(self, {});
@@ -297,58 +505,38 @@ static Napi::Value EncodeResult_ToJSTemplateLiterals(const Napi::CallbackInfo& i
         strVal = strRes;
     }
 
+    ParsedStringResult res;
+
 #ifdef USE_V8_ACCELERATION
     v8::Isolate* isolate = v8::Isolate::GetCurrent();
     if (isolate) {
         v8::Local<v8::Value> v8_val = *reinterpret_cast<v8::Local<v8::Value>*>(&strVal);
         if (v8_val->IsString()) {
             v8::Local<v8::String> v8_str = v8_val.As<v8::String>();
-            bool is_one_byte = false;
-            size_t out_len = 0;
-            void* out_buf = nullptr;
             {
                 v8::String::ValueView view(isolate, v8_str);
-                is_one_byte = view.is_one_byte();
-                if (is_one_byte) {
-                    out_buf = EscapeToTemplateLiterals(reinterpret_cast<const char*>(view.data8()), view.length(), &out_len);
+                if (view.is_one_byte()) {
+                    EscapeToTemplateLiterals(reinterpret_cast<const char*>(view.data8()), view.length(), res);
                 } else {
-                    out_buf = EscapeToTemplateLiterals(reinterpret_cast<const char16_t*>(view.data16()), view.length(), &out_len);
+                    EscapeToTemplateLiterals(reinterpret_cast<const char16_t*>(view.data16()), view.length(), res);
                 }
             }
-            if (is_one_byte) {
-                return MakeLatin1String(env, static_cast<char*>(out_buf), out_len);
+            if (res.error) return env.Null();
+            if (res.is_one_byte) {
+                return MakeLatin1String(env, static_cast<char*>(res.buf), res.len);
             }
-            return MakeUtf16String(env, static_cast<char16_t*>(out_buf), out_len);
+            return MakeUtf16String(env, static_cast<char16_t*>(res.buf), res.len);
         }
     }
 #endif
 
-    size_t u16len = 0;
-    napi_get_value_string_utf16(env, strVal, nullptr, 0, &u16len);
-
-    size_t utf8_len = 0;
-    napi_status status = napi_get_value_string_utf8(env, strVal, nullptr, 0, &utf8_len);
-    if (status != napi_ok) {
-        return env.Null();
+    std::u16string input = Napi::Value(env, strVal).As<Napi::String>().Utf16Value();
+    EscapeToTemplateLiterals(input.data(), input.length(), res);
+    if (res.error) return env.Null();
+    if (res.is_one_byte) {
+        return MakeLatin1String(env, static_cast<char*>(res.buf), res.len);
     }
-
-    if (utf8_len == u16len) {
-        char* in_buf = static_cast<char*>(std::malloc(u16len + 1));
-        size_t copied = 0;
-        napi_get_value_string_latin1(env, strVal, in_buf, u16len + 1, &copied);
-        size_t out_len = 0;
-        char* out_buf = EscapeToTemplateLiterals(in_buf, u16len, &out_len);
-        std::free(in_buf);
-        return MakeLatin1String(env, out_buf, out_len);
-    }
-
-    char16_t* in_buf = static_cast<char16_t*>(std::malloc((u16len + 1) * sizeof(char16_t)));
-    size_t copied = 0;
-    napi_get_value_string_utf16(env, strVal, in_buf, u16len + 1, &copied);
-    size_t out_len = 0;
-    char16_t* out_buf = EscapeToTemplateLiterals(in_buf, u16len, &out_len);
-    std::free(in_buf);
-    return MakeUtf16String(env, out_buf, out_len);
+    return MakeUtf16String(env, static_cast<char16_t*>(res.buf), res.len);
 }
 
 static inline bool IsUint8Array(const Napi::Value& val) {
@@ -461,12 +649,6 @@ static inline int HexVal(CharT c) {
     return -1;
 }
 
-struct ParsedStringResult {
-    void* buf = nullptr;
-    size_t len = 0;
-    bool is_one_byte = true;
-    bool error = false;
-};
 
 template <typename CharT>
 static void ParseJSTemplateLiteralsImpl(const CharT* input, size_t len, ParsedStringResult& res) {
