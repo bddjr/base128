@@ -46,6 +46,9 @@ static Napi::Value MakeLatin1String(napi_env env, char* buf, size_t len) {
             },
             nullptr, &res, &copied);
         if (status == napi_ok) {
+            if (copied) {
+                std::free(buf);
+            }
             return Napi::Value(env, res);
         }
 #endif
@@ -73,6 +76,9 @@ static Napi::Value MakeUtf16String(napi_env env, char16_t* buf, size_t len) {
             },
             nullptr, &res, &copied);
         if (status == napi_ok) {
+            if (copied) {
+                std::free(buf);
+            }
             return Napi::Value(env, res);
         }
 #endif
