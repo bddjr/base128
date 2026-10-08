@@ -11,6 +11,9 @@ interface EncodeResultPrototype {
 }
 
 interface EncodeResult extends EncodeResultPrototype {
+    /**
+     * Base128 encoded bytes, each item's value is in the range of 0-127.
+     */
     bytes: Uint8Array<ArrayBuffer>;
 }
 
