@@ -47,10 +47,9 @@ export function encode(input) {
             throw TypeError("encode: input must be a Uint8Array or Uint8ClampedArray")
     }
     var il = input.length
-        , fullChunks = Math.floor(il / 7)
         , rem = il % 7
-        , outLen = fullChunks * 8 + (rem > 0 ? Math.floor((rem * 8 + 6) / 7) : 0)
-        , out = new Uint8Array(outLen)
+        , fullChunks = (il - rem) / 7
+        , out = new Uint8Array(fullChunks * 8 + Math.ceil(rem / 0.875))
         , ii = 0
         , oi = 0
         , limit = fullChunks * 7
@@ -77,10 +76,10 @@ export function encode(input) {
         /* 7 */ out[oi++] = 127 & b6
     }
     if (rem > 0) {
-        var prev = input[ii++]
+        let prev = input[ii++]
         out[oi++] = prev >> 1
-        for (var r = 1; r < rem; r++) {
-            var curr = input[ii++]
+        for (let r = 1; r < rem; r++) {
+            const curr = input[ii++]
             out[oi++] = 127 & (prev << (7 - r) | curr >> (1 + r))
             prev = curr
         }
@@ -99,9 +98,9 @@ export function decode(input) {
     if (typeof input != 'string')
         throw TypeError("decode: input must be a string");
     var il = input.length
-        , fullChunks = Math.floor(il / 8)
         , rem = il % 8
-        , out = new Uint8Array(Math.floor((il * 7) / 8))
+        , fullChunks = (il - rem) / 8
+        , out = new Uint8Array(il * 0.875)
         , ii = 0
         , oi = 0
         , limit = fullChunks * 8
@@ -124,9 +123,9 @@ export function decode(input) {
         out[oi++] = (c6 << 7) | c7
     }
     if (rem >= 2) {
-        var prev = input.charCodeAt(ii++)
-        for (var r = 1; r < rem; r++) {
-            var curr = input.charCodeAt(ii++)
+        let prev = input.charCodeAt(ii++)
+        for (let r = 1; r < rem; r++) {
+            const curr = input.charCodeAt(ii++)
             out[oi++] = (prev << r) | (curr >> (7 - r))
             prev = curr
         }
