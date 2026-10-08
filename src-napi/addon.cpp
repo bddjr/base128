@@ -461,35 +461,79 @@ static inline int HexVal(CharT c) {
     return -1;
 }
 
+struct ParsedStringResult {
+    void* buf = nullptr;
+    size_t len = 0;
+    bool is_one_byte = true;
+    bool error = false;
+};
+
 template <typename CharT>
-static bool ParseJSTemplateLiteralsImpl(const CharT* input, size_t len, std::u16string& out) {
-    if (len < 2) return false;
+static void ParseJSTemplateLiteralsImpl(const CharT* input, size_t len, ParsedStringResult& res) {
+    res.error = true;
+    res.buf = nullptr;
+    res.len = 0;
+
+    if (len < 2) return;
 
     size_t start = 0;
     size_t end = len - 1;
 
     for (;; start++) {
-        if (start == end) return false;
+        if (start == end) return;
         CharT c = input[start];
         if (c == '`') break;
         if (c != ' ' && (c < '\t' || c > '\r') && static_cast<uint16_t>(c) != 0x00A0 && static_cast<uint16_t>(c) != 0xFEFF) {
-            return false;
+            return;
         }
     }
 
     for (;; end--) {
-        if (end == start) return false;
+        if (end == start) return;
         CharT c = input[end];
         if (c == '`') break;
         if (c != ' ' && (c < '\t' || c > '\r') && static_cast<uint16_t>(c) != 0x00A0 && static_cast<uint16_t>(c) != 0xFEFF) {
-            return false;
+            return;
         }
     }
 
     size_t i = start + 1;
+    size_t cap = (end > start) ? (end - start) : 1;
 
-    out.clear();
-    out.reserve(end - i);
+    char* buf8 = static_cast<char*>(std::malloc(cap));
+    if (!buf8) return;
+    char16_t* buf16 = nullptr;
+    bool is_one_byte = true;
+    size_t out_len = 0;
+
+    auto cleanup = [&]() {
+        if (is_one_byte) {
+            std::free(buf8);
+        } else {
+            std::free(buf16);
+        }
+    };
+
+    auto switchToTwoByte = [&]() {
+        buf16 = static_cast<char16_t*>(std::malloc(cap * sizeof(char16_t)));
+        for (size_t k = 0; k < out_len; k++) {
+            buf16[k] = static_cast<uint8_t>(buf8[k]);
+        }
+        std::free(buf8);
+        buf8 = nullptr;
+        is_one_byte = false;
+    };
+
+    auto pushChar = [&](char16_t ch) {
+        if (is_one_byte) {
+            if (ch <= 255) {
+                buf8[out_len++] = static_cast<char>(ch);
+                return;
+            }
+            switchToTwoByte();
+        }
+        buf16[out_len++] = ch;
+    };
 
     while (i < end) {
         size_t chunkStart = i;
@@ -502,28 +546,52 @@ static bool ParseJSTemplateLiteralsImpl(const CharT* input, size_t len, std::u16
         }
         if (i > chunkStart) {
             size_t chunkLen = i - chunkStart;
-            size_t curSize = out.size();
-            out.resize(curSize + chunkLen);
-            char16_t* dst = &out[curSize];
-            if constexpr (sizeof(CharT) == 1) {
-                for (size_t k = 0; k < chunkLen; k++) {
-                    dst[k] = static_cast<uint8_t>(input[chunkStart + k]);
+            if (is_one_byte) {
+                if constexpr (sizeof(CharT) == 1) {
+                    std::memcpy(buf8 + out_len, input + chunkStart, chunkLen);
+                } else {
+                    bool has_wide = false;
+                    for (size_t k = 0; k < chunkLen; k++) {
+                        if (static_cast<uint16_t>(input[chunkStart + k]) > 255) {
+                            has_wide = true;
+                            break;
+                        }
+                    }
+                    if (has_wide) {
+                        switchToTwoByte();
+                        for (size_t k = 0; k < chunkLen; k++) {
+                            buf16[out_len + k] = static_cast<char16_t>(input[chunkStart + k]);
+                        }
+                    } else {
+                        for (size_t k = 0; k < chunkLen; k++) {
+                            buf8[out_len + k] = static_cast<char>(input[chunkStart + k]);
+                        }
+                    }
                 }
             } else {
-                std::memcpy(dst, input + chunkStart, chunkLen * sizeof(char16_t));
+                if constexpr (sizeof(CharT) == 1) {
+                    for (size_t k = 0; k < chunkLen; k++) {
+                        buf16[out_len + k] = static_cast<uint8_t>(input[chunkStart + k]);
+                    }
+                } else {
+                    std::memcpy(buf16 + out_len, input + chunkStart, chunkLen * sizeof(char16_t));
+                }
             }
+            out_len += chunkLen;
         }
         if (i >= end) break;
 
         CharT c = input[i];
         if (c == '`') {
-            return false;
+            cleanup();
+            return;
         }
         if (c == '$') {
             if (i + 1 < end && input[i + 1] == '{') {
-                return false;
+                cleanup();
+                return;
             }
-            out.push_back(u'$');
+            pushChar(u'$');
             i++;
             continue;
         }
@@ -531,36 +599,38 @@ static bool ParseJSTemplateLiteralsImpl(const CharT* input, size_t len, std::u16
         // c is '\\'
         i++;
         if (i >= end) {
-            return false;
+            cleanup();
+            return;
         }
         CharT next = input[i];
         switch (next) {
-            case 'r': out.push_back(u'\r'); i++; break;
-            case 'n': out.push_back(u'\n'); i++; break;
-            case 't': out.push_back(u'\t'); i++; break;
-            case 'b': out.push_back(u'\b'); i++; break;
-            case 'f': out.push_back(u'\f'); i++; break;
-            case 'v': out.push_back(u'\v'); i++; break;
-            case '\\': out.push_back(u'\\'); i++; break;
-            case '`': out.push_back(u'`'); i++; break;
-            case '\'': out.push_back(u'\''); i++; break;
-            case '"': out.push_back(u'"'); i++; break;
-            case '$': out.push_back(u'$'); i++; break;
+            case 'r': pushChar(u'\r'); i++; break;
+            case 'n': pushChar(u'\n'); i++; break;
+            case 't': pushChar(u'\t'); i++; break;
+            case 'b': pushChar(u'\b'); i++; break;
+            case 'f': pushChar(u'\f'); i++; break;
+            case 'v': pushChar(u'\v'); i++; break;
+            case '\\': pushChar(u'\\'); i++; break;
+            case '`': pushChar(u'`'); i++; break;
+            case '\'': pushChar(u'\''); i++; break;
+            case '"': pushChar(u'"'); i++; break;
+            case '$': pushChar(u'$'); i++; break;
             case '0': {
                 if (i + 1 < end && input[i + 1] >= '0' && input[i + 1] <= '9') {
-                    return false;
+                    cleanup();
+                    return;
                 }
-                out.push_back(u'\0');
+                pushChar(u'\0');
                 i++;
                 break;
             }
             case 'x': {
-                if (i + 2 >= end) return false;
+                if (i + 2 >= end) { cleanup(); return; }
                 int h1 = HexVal(input[i + 1]);
-                if (h1 == -1) return false;
+                if (h1 == -1) { cleanup(); return; }
                 int h2 = HexVal(input[i + 2]);
-                if (h2 == -1) return false;
-                out.push_back(static_cast<char16_t>((h1 << 4) | h2));
+                if (h2 == -1) { cleanup(); return; }
+                pushChar(static_cast<char16_t>((h1 << 4) | h2));
                 i += 3;
                 break;
             }
@@ -574,39 +644,43 @@ static bool ParseJSTemplateLiteralsImpl(const CharT* input, size_t len, std::u16
                         CharT ch = input[k];
                         if (ch == '}') {
                             if (k == startHex || cp > 0x10FFFF) {
-                                return false;
+                                cleanup();
+                                return;
                             }
                             if (cp <= 0xFFFF) {
-                                out.push_back(static_cast<char16_t>(cp));
+                                pushChar(static_cast<char16_t>(cp));
                             } else {
                                 cp -= 0x10000;
-                                out.push_back(static_cast<char16_t>(0xD800 + (cp >> 10)));
-                                out.push_back(static_cast<char16_t>(0xDC00 + (cp & 0x3FF)));
+                                if (is_one_byte) switchToTwoByte();
+                                buf16[out_len++] = static_cast<char16_t>(0xD800 + (cp >> 10));
+                                buf16[out_len++] = static_cast<char16_t>(0xDC00 + (cp & 0x3FF));
                             }
                             i = k + 1;
                             break;
                         }
                         int hv = HexVal(ch);
                         if (hv == -1) {
-                            return false;
+                            cleanup();
+                            return;
                         }
                         cp = (cp << 4) | hv;
                     }
                     if (k >= maxScan) {
-                        return false;
+                        cleanup();
+                        return;
                     }
                     break;
                 }
-                if (i + 4 >= end) return false;
+                if (i + 4 >= end) { cleanup(); return; }
                 int h1 = HexVal(input[i + 1]);
-                if (h1 == -1) return false;
+                if (h1 == -1) { cleanup(); return; }
                 int h2 = HexVal(input[i + 2]);
-                if (h2 == -1) return false;
+                if (h2 == -1) { cleanup(); return; }
                 int h3 = HexVal(input[i + 3]);
-                if (h3 == -1) return false;
+                if (h3 == -1) { cleanup(); return; }
                 int h4 = HexVal(input[i + 4]);
-                if (h4 == -1) return false;
-                out.push_back(static_cast<char16_t>((h1 << 12) | (h2 << 8) | (h3 << 4) | h4));
+                if (h4 == -1) { cleanup(); return; }
+                pushChar(static_cast<char16_t>((h1 << 12) | (h2 << 8) | (h3 << 4) | h4));
                 i += 5;
                 break;
             }
@@ -620,14 +694,17 @@ static bool ParseJSTemplateLiteralsImpl(const CharT* input, size_t len, std::u16
                 break;
             }
             default: {
-                out.push_back(static_cast<char16_t>(next));
+                pushChar(static_cast<char16_t>(next));
                 i++;
                 break;
             }
         }
     }
 
-    return true;
+    res.buf = is_one_byte ? static_cast<void*>(buf8) : static_cast<void*>(buf16);
+    res.len = out_len;
+    res.is_one_byte = is_one_byte;
+    res.error = false;
 }
 
 static Napi::Value ParseJSTemplateLiterals(const Napi::CallbackInfo& info) {
@@ -642,8 +719,7 @@ static Napi::Value ParseJSTemplateLiterals(const Napi::CallbackInfo& info) {
         return env.Null();
     };
 
-    std::u16string out;
-    bool ok = false;
+    ParsedStringResult res;
 
 #ifdef USE_V8_ACCELERATION
     v8::Isolate* isolate = v8::Isolate::GetCurrent();
@@ -655,25 +731,31 @@ static Napi::Value ParseJSTemplateLiterals(const Napi::CallbackInfo& info) {
             {
                 v8::String::ValueView view(isolate, v8_str);
                 if (view.is_one_byte()) {
-                    ok = ParseJSTemplateLiteralsImpl(reinterpret_cast<const char*>(view.data8()), view.length(), out);
+                    ParseJSTemplateLiteralsImpl(reinterpret_cast<const char*>(view.data8()), view.length(), res);
                 } else {
-                    ok = ParseJSTemplateLiteralsImpl(reinterpret_cast<const char16_t*>(view.data16()), view.length(), out);
+                    ParseJSTemplateLiteralsImpl(reinterpret_cast<const char16_t*>(view.data16()), view.length(), res);
                 }
             }
-            if (!ok) {
+            if (res.error) {
                 return ThrowSyntaxError();
             }
-            return Napi::String::New(env, out.data(), out.size());
+            if (res.is_one_byte) {
+                return MakeLatin1String(env, static_cast<char*>(res.buf), res.len);
+            }
+            return MakeUtf16String(env, static_cast<char16_t*>(res.buf), res.len);
         }
     }
 #endif
 
     std::u16string input = info[0].As<Napi::String>().Utf16Value();
-    ok = ParseJSTemplateLiteralsImpl(input.data(), input.length(), out);
-    if (!ok) {
+    ParseJSTemplateLiteralsImpl(input.data(), input.length(), res);
+    if (res.error) {
         return ThrowSyntaxError();
     }
-    return Napi::String::New(env, out.data(), out.size());
+    if (res.is_one_byte) {
+        return MakeLatin1String(env, static_cast<char*>(res.buf), res.len);
+    }
+    return MakeUtf16String(env, static_cast<char16_t*>(res.buf), res.len);
 }
 
 #ifdef USE_V8_ACCELERATION
