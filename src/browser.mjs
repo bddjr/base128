@@ -39,6 +39,7 @@ export class EncodeResult {
 export function encode(input) {
     if (input == null)
         throw TypeError("encode: input must be a Uint8Array or Uint8ClampedArray")
+    // Use Symbol.toStringTag to support recognizing objects from iframes
     switch (input[Symbol.toStringTag]) {
         case "Uint8Array":
         case "Uint8ClampedArray":
