@@ -26,7 +26,7 @@ const input = fs.readFileSync("example.gz")
 // encode to Template literals
 const encodedTemplate = base128.encode(input).toJSTemplateLiterals()
 
-// (Safe eval) Parse Template literals to string
+// Safe parse Template literals to string
 const jstlToStr = base128.parseJSTemplateLiterals(encodedTemplate)
 
 // decode to bytes

@@ -134,6 +134,9 @@ export function decode(input) {
     return out
 }
 
+/**
+ * @param {string} input
+ */
 export function parseJSTemplateLiterals(input) {
     if (typeof input != 'string')
         throw TypeError("parseJSTemplateLiterals: input must be a string");
