@@ -125,11 +125,6 @@ jobs:
             platform: linux/ppc64le
             pkg_cmd: apt-get update && apt-get install -y python3 make g++
             qemu: true
-          - name: linux-s390x-gnu
-            image: ubuntu:24.04
-            platform: linux/s390x
-            pkg_cmd: apt-get update && apt-get install -y nodejs npm python3 make g++
-            qemu: true
     continue-on-error: true
     steps:
       - uses: actions/checkout@v6

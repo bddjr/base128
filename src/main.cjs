@@ -49,8 +49,6 @@ loadBinding: {
                 : "linux-arm64-gnu";
         } else if (arch === "ppc64")
             bindingPkg = "linux-ppc64-gnu";
-        else if (arch === "s390x")
-            bindingPkg = "linux-s390x-gnu";
     } else if (platform === "android") {
         if (arch === "arm64")
             bindingPkg = "android-arm64";
