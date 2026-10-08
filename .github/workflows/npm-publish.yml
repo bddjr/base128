@@ -198,7 +198,7 @@ jobs:
         run: |
           TOOLCHAIN_BIN="$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
           CXX="$TOOLCHAIN_BIN/aarch64-linux-android24-clang++"
-          $CXX -O3 -fPIC -shared -std=c++17 -DNAPI_DISABLE_CPP_EXCEPTIONS \
+          $CXX -O3 -flto -fomit-frame-pointer -fno-rtti -fvisibility=hidden -fPIC -shared -std=c++17 -DNAPI_DISABLE_CPP_EXCEPTIONS \
             -I node_modules/node-api-headers/include \
             -I node_modules/node-addon-api \
             -Wl,-z,undefs \
@@ -237,7 +237,7 @@ jobs:
         run: |
           CXX="$OHOS_SDK_NATIVE/llvm/bin/clang++"
           $CXX --target=aarch64-linux-ohos --sysroot="$OHOS_SDK_NATIVE/sysroot" \
-            -O3 -fPIC -shared -std=c++17 -DNAPI_DISABLE_CPP_EXCEPTIONS \
+            -O3 -flto -fomit-frame-pointer -fno-rtti -fvisibility=hidden -fPIC -shared -std=c++17 -DNAPI_DISABLE_CPP_EXCEPTIONS \
             -I node_modules/node-api-headers/include \
             -I node_modules/node-addon-api \
             -Wl,-z,undefs \
