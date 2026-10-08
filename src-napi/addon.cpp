@@ -453,10 +453,6 @@ static Napi::Value Decode(const Napi::CallbackInfo& info) {
     return Napi::Uint8Array::New(env, out_len, ab, 0);
 }
 
-static inline void ThrowSyntaxError(Napi::Env env, const char* msg) {
-    Napi::SyntaxError::New(env, msg).ThrowAsJavaScriptException();
-}
-
 static inline bool IsHexDigit(char16_t c) {
     return (c >= u'0' && c <= u'9') ||
            (c >= u'a' && c <= u'f') ||
@@ -470,7 +466,11 @@ static Napi::Value ParseJSTemplateLiterals(const Napi::CallbackInfo& info) {
         return env.Null();
     }
 
-    const char* err = "parseJSTemplateLiterals: invalid input";
+    auto ThrowSyntaxError = [&env]() {
+        Napi::SyntaxError::New(env, "parseJSTemplateLiterals: invalid input").ThrowAsJavaScriptException();
+        return env.Null();
+    };
+
     std::u16string input = info[0].As<Napi::String>().Utf16Value();
 
     // Trim whitespace
@@ -492,12 +492,10 @@ static Napi::Value ParseJSTemplateLiterals(const Napi::CallbackInfo& info) {
     }
 
     if (end - start < 2) {
-        ThrowSyntaxError(env, err);
-        return env.Null();
+        return ThrowSyntaxError();
     }
     if (input[start] != u'`' || input[end - 1] != u'`') {
-        ThrowSyntaxError(env, err);
-        return env.Null();
+        return ThrowSyntaxError();
     }
 
     size_t loopMaxIndex = end - 1;
@@ -522,13 +520,11 @@ static Napi::Value ParseJSTemplateLiterals(const Napi::CallbackInfo& info) {
 
         char16_t c = input[i];
         if (c == u'`') {
-            ThrowSyntaxError(env, err);
-            return env.Null();
+            return ThrowSyntaxError();
         }
         if (c == u'$') {
             if (i + 1 < loopMaxIndex && input[i + 1] == u'{') {
-                ThrowSyntaxError(env, err);
-                return env.Null();
+                return ThrowSyntaxError();
             }
             out.push_back(u'$');
             i++;
@@ -538,8 +534,7 @@ static Napi::Value ParseJSTemplateLiterals(const Napi::CallbackInfo& info) {
         // c is u'\\'
         i++;
         if (i >= loopMaxIndex) {
-            ThrowSyntaxError(env, err);
-            return env.Null();
+            return ThrowSyntaxError();
         }
         char16_t next = input[i];
         switch (next) {
@@ -556,8 +551,7 @@ static Napi::Value ParseJSTemplateLiterals(const Napi::CallbackInfo& info) {
             case u'$': out.push_back(u'$'); i++; break;
             case u'0': {
                 if (i + 1 < loopMaxIndex && input[i + 1] >= u'0' && input[i + 1] <= u'9') {
-                    ThrowSyntaxError(env, err);
-                    return env.Null();
+                    return ThrowSyntaxError();
                 }
                 out.push_back(u'\0');
                 i++;
@@ -569,8 +563,7 @@ static Napi::Value ParseJSTemplateLiterals(const Napi::CallbackInfo& info) {
                     out.push_back(static_cast<char16_t>(strtoul(hex, nullptr, 16)));
                     i += 3;
                 } else {
-                    ThrowSyntaxError(env, err);
-                    return env.Null();
+                    return ThrowSyntaxError();
                 }
                 break;
             }
@@ -592,17 +585,14 @@ static Napi::Value ParseJSTemplateLiterals(const Napi::CallbackInfo& info) {
                                 out.push_back(static_cast<char16_t>(0xD800 + (cp >> 10)));
                                 out.push_back(static_cast<char16_t>(0xDC00 + (cp & 0x3FF)));
                             } else {
-                                ThrowSyntaxError(env, err);
-                                return env.Null();
+                                return ThrowSyntaxError();
                             }
                             i = closeBrace + 1;
                         } else {
-                            ThrowSyntaxError(env, err);
-                            return env.Null();
+                            return ThrowSyntaxError();
                         }
                     } else {
-                        ThrowSyntaxError(env, err);
-                        return env.Null();
+                        return ThrowSyntaxError();
                     }
                 } else if (i + 4 < loopMaxIndex &&
                            IsHexDigit(input[i + 1]) && IsHexDigit(input[i + 2]) &&
@@ -614,8 +604,7 @@ static Napi::Value ParseJSTemplateLiterals(const Napi::CallbackInfo& info) {
                     out.push_back(static_cast<char16_t>(strtoul(hex, nullptr, 16)));
                     i += 5;
                 } else {
-                    ThrowSyntaxError(env, err);
-                    return env.Null();
+                    return ThrowSyntaxError();
                 }
                 break;
             }
