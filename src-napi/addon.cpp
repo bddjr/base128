@@ -570,7 +570,7 @@ static Napi::Value Encode(const Napi::CallbackInfo& info) {
 
     size_t rem = il % 7;
     size_t out_len = (il / 7) * 8;
-    if (rem > 0) {
+    if (rem) {
         out_len += (rem * 8 + 6) / 7;
     }
 
@@ -593,7 +593,7 @@ static Napi::Value Encode(const Napi::CallbackInfo& info) {
         encode_7to8(in, out);
     }
 
-    if (rem > 0) {
+    if (rem) {
         uint8_t b[7] = {0};
         memcpy(b, in, rem);
         uint8_t tmp[8];
@@ -605,35 +605,16 @@ static Napi::Value Encode(const Napi::CallbackInfo& info) {
     return encodeResultConstructor.New({ out_ta });
 }
 
-static Napi::Value Decode(const Napi::CallbackInfo& info) {
-    Napi::Env env = info.Env();
-    if (info.Length() < 1 || !info[0].IsString()) {
-        Napi::TypeError::New(env, "decode: input must be a string").ThrowAsJavaScriptException();
-        return env.Null();
-    }
-    const uint8_t* in = nullptr;
-    size_t il = 0;
-    std::string str_holder;
-
-    napi_value str_val = info[0];
-    napi_get_value_string_latin1(env, str_val, nullptr, 0, &il);
-    str_holder.resize(il);
-    size_t copied = 0;
-    napi_get_value_string_latin1(env, str_val, &str_holder[0], il + 1, &copied);
-    in = reinterpret_cast<const uint8_t*>(str_holder.data());
-
-    size_t out_len = (il * 7) / 8;
-    Napi::ArrayBuffer ab = Napi::ArrayBuffer::New(env, out_len);
-    uint8_t* out = reinterpret_cast<uint8_t*>(ab.Data());
-
-    auto decode_8to7 = [](const uint8_t* src, uint8_t* dst) {
-        dst[0] = (src[0] << 1) | (src[1] >> 6);
-        dst[1] = (src[1] << 2) | (src[2] >> 5);
-        dst[2] = (src[2] << 3) | (src[3] >> 4);
-        dst[3] = (src[3] << 4) | (src[4] >> 3);
-        dst[4] = (src[4] << 5) | (src[5] >> 2);
-        dst[5] = (src[5] << 6) | (src[6] >> 1);
-        dst[6] = (src[6] << 7) | src[7];
+template <typename CharT>
+static inline void DecodeImpl(const CharT* in, size_t il, uint8_t* out) {
+    auto decode_8to7 = [](const CharT* src, uint8_t* dst) {
+        dst[0] = static_cast<uint8_t>((src[0] << 1) | (src[1] >> 6));
+        dst[1] = static_cast<uint8_t>((src[1] << 2) | (src[2] >> 5));
+        dst[2] = static_cast<uint8_t>((src[2] << 3) | (src[3] >> 4));
+        dst[3] = static_cast<uint8_t>((src[3] << 4) | (src[4] >> 3));
+        dst[4] = static_cast<uint8_t>((src[4] << 5) | (src[5] >> 2));
+        dst[5] = static_cast<uint8_t>((src[5] << 6) | (src[6] >> 1));
+        dst[6] = static_cast<uint8_t>((src[6] << 7) | src[7]);
     };
 
     size_t full_chunks = il / 8;
@@ -641,14 +622,59 @@ static Napi::Value Decode(const Napi::CallbackInfo& info) {
         decode_8to7(in, out);
     }
 
-    size_t rem = il % 8;
-    if (rem >= 2) {
-        uint8_t c[8] = {0};
-        memcpy(c, in, rem);
+    size_t rem = il - (full_chunks * 8);
+    if (rem > 1) {
+        CharT c[8] = {0};
+        std::memcpy(c, in, rem * sizeof(CharT));
         uint8_t tmp[7];
         decode_8to7(c, tmp);
-        memcpy(out, tmp, (rem * 7) / 8);
+        std::memcpy(out, tmp, (rem * 7) / 8);
     }
+}
+
+static Napi::Value Decode(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+    if (info.Length() < 1 || !info[0].IsString()) {
+        Napi::TypeError::New(env, "decode: input must be a string").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+
+#ifdef USE_V8_ACCELERATION
+    v8::Isolate* isolate = v8::Isolate::GetCurrent();
+    if (isolate) {
+        napi_value str_val = info[0];
+        v8::Local<v8::Value> v8_val = *reinterpret_cast<v8::Local<v8::Value>*>(&str_val);
+        if (v8_val->IsString()) {
+            v8::Local<v8::String> v8_str = v8_val.As<v8::String>();
+            size_t il = v8_str->Length();
+            size_t out_len = (il * 7) / 8;
+            Napi::ArrayBuffer ab = Napi::ArrayBuffer::New(env, out_len);
+            uint8_t* out = reinterpret_cast<uint8_t*>(ab.Data());
+            {
+                v8::String::ValueView view(isolate, v8_str);
+                if (view.is_one_byte()) {
+                    DecodeImpl(reinterpret_cast<const uint8_t*>(view.data8()), il, out);
+                } else {
+                    DecodeImpl(reinterpret_cast<const char16_t*>(view.data16()), il, out);
+                }
+            }
+            return Napi::Uint8Array::New(env, out_len, ab, 0);
+        }
+    }
+#endif
+
+    napi_value str_val = info[0];
+    size_t il = 0;
+    napi_get_value_string_latin1(env, str_val, nullptr, 0, &il);
+    std::string str_holder;
+    str_holder.resize(il);
+    size_t copied = 0;
+    napi_get_value_string_latin1(env, str_val, &str_holder[0], il + 1, &copied);
+
+    size_t out_len = (il * 7) / 8;
+    Napi::ArrayBuffer ab = Napi::ArrayBuffer::New(env, out_len);
+    uint8_t* out = reinterpret_cast<uint8_t*>(ab.Data());
+    DecodeImpl(reinterpret_cast<const uint8_t*>(str_holder.data()), il, out);
     return Napi::Uint8Array::New(env, out_len, ab, 0);
 }
 
