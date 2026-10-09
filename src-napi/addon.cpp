@@ -71,8 +71,8 @@ static inline void Widen8To16(const uint8_t* src, char16_t* dst, size_t len) {
 }
 
 static Napi::Value MakeLatin1String(napi_env env, char* buf, size_t len) {
-    if (len >= 1024) {
 #if NAPI_VERSION >= 10
+    if (len >= 1024) {
         bool copied = false;
         napi_value res;
         napi_status status = node_api_create_external_string_latin1(
@@ -85,8 +85,8 @@ static Napi::Value MakeLatin1String(napi_env env, char* buf, size_t len) {
             // buf is already freed by finalizer when copied is true, do not double-free here
             return Napi::Value(env, res);
         }
-#endif
     }
+#endif
     napi_value res;
     napi_status status = napi_create_string_latin1(env, buf, len, &res);
     std::free(buf);
@@ -95,8 +95,8 @@ static Napi::Value MakeLatin1String(napi_env env, char* buf, size_t len) {
 }
 
 static Napi::Value MakeUtf16String(napi_env env, char16_t* buf, size_t len) {
-    if (len >= 512) {
 #if NAPI_VERSION >= 10
+    if (len >= 512) {
         bool copied = false;
         napi_value res;
         napi_status status = node_api_create_external_string_utf16(
@@ -109,8 +109,8 @@ static Napi::Value MakeUtf16String(napi_env env, char16_t* buf, size_t len) {
             // buf is already freed by finalizer when copied is true, do not double-free here
             return Napi::Value(env, res);
         }
-#endif
     }
+#endif
     napi_value res;
     napi_status status = napi_create_string_utf16(env, buf, len, &res);
     std::free(buf);
