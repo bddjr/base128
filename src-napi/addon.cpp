@@ -25,11 +25,11 @@ static const bool kIsSpecialChar[256] = {
     1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0  // 96: `
 };
 
-#if defined(__x86_64__) || defined(_M_X64)
-#include <immintrin.h>
 #if defined(_MSC_VER)
 #include <intrin.h>
 #endif
+#if defined(__x86_64__) || defined(_M_X64)
+#include <immintrin.h>
 #elif defined(__aarch64__) || defined(_M_ARM64)
 #include <arm_neon.h>
 #endif
@@ -196,7 +196,26 @@ static inline char* EscapeBytesToTemplateLiterals(const char* src, size_t len, s
             uint8x16_t m96 = vceqq_u8(v, v96);
             uint8x16_t any = vorrq_u8(vorrq_u8(m0, m13),
                              vorrq_u8(vorrq_u8(m36, m60), vorrq_u8(m92, m96)));
-            if (vmaxvq_u8(any) != 0) {
+            uint64_t lo = vgetq_lane_u64(vreinterpretq_u64_u8(any), 0);
+            uint64_t hi = vgetq_lane_u64(vreinterpretq_u64_u8(any), 1);
+            if ((lo | hi) != 0) {
+                if (lo != 0) {
+#if defined(_MSC_VER)
+                    unsigned long offset;
+                    _BitScanForward64(&offset, lo);
+                    i += (offset >> 3);
+#else
+                    i += (__builtin_ctzll(lo) >> 3);
+#endif
+                } else {
+#if defined(_MSC_VER)
+                    unsigned long offset;
+                    _BitScanForward64(&offset, hi);
+                    i += 8 + (offset >> 3);
+#else
+                    i += 8 + (__builtin_ctzll(hi) >> 3);
+#endif
+                }
                 break;
             }
             i += 16;
