@@ -13,7 +13,9 @@
 #include <cstdlib>
 #include <cctype>
 
-static Napi::FunctionReference encodeResultConstructor;
+struct AddonData {
+    Napi::FunctionReference encodeResultConstructor;
+};
 
 static const bool kIsSpecialChar[256] = {
     1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, // 0: \0, 13: \r
@@ -80,9 +82,7 @@ static Napi::Value MakeLatin1String(napi_env env, char* buf, size_t len) {
             },
             nullptr, &res, &copied);
         if (status == napi_ok) {
-            if (copied) {
-                std::free(buf);
-            }
+            // buf is already freed by finalizer when copied is true, do not double-free here
             return Napi::Value(env, res);
         }
 #endif
@@ -106,9 +106,7 @@ static Napi::Value MakeUtf16String(napi_env env, char16_t* buf, size_t len) {
             },
             nullptr, &res, &copied);
         if (status == napi_ok) {
-            if (copied) {
-                std::free(buf);
-            }
+            // buf is already freed by finalizer when copied is true, do not double-free here
             return Napi::Value(env, res);
         }
 #endif
@@ -591,7 +589,7 @@ static Napi::Value EncodeResult_ToJSTemplateLiterals(const Napi::CallbackInfo& i
             {
                 v8::String::ValueView view(isolate, v8_str);
                 if (view.is_one_byte()) {
-                    EscapeToTemplateLiterals(reinterpret_cast<const char*>(view.data8()), view.length(), res);
+                    EscapeToTemplateLiterals(reinterpret_cast<const uint8_t*>(view.data8()), view.length(), res);
                 } else {
                     EscapeToTemplateLiterals(reinterpret_cast<const char16_t*>(view.data16()), view.length(), res);
                 }
@@ -666,7 +664,8 @@ static Napi::Value Encode(const Napi::CallbackInfo& info) {
     }
 
     Napi::Uint8Array out_ta = Napi::Uint8Array::New(env, out_len, ab, 0);
-    return encodeResultConstructor.New({ out_ta });
+    AddonData* addonData = env.GetInstanceData<AddonData>();
+    return addonData->encodeResultConstructor.New({ out_ta });
 }
 
 template <typename CharT>
@@ -1026,7 +1025,7 @@ static Napi::Value ParseJSTemplateLiterals(const Napi::CallbackInfo& info) {
             {
                 v8::String::ValueView view(isolate, v8_str);
                 if (view.is_one_byte()) {
-                    ParseJSTemplateLiteralsImpl(reinterpret_cast<const char*>(view.data8()), view.length(), res);
+                    ParseJSTemplateLiteralsImpl(reinterpret_cast<const uint8_t*>(view.data8()), view.length(), res);
                 } else {
                     ParseJSTemplateLiteralsImpl(reinterpret_cast<const char16_t*>(view.data16()), view.length(), res);
                 }
@@ -1099,8 +1098,9 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
     proto.Set("toString", Napi::Function::New(env, EncodeResult_ToString, "toString"));
     proto.Set("toJSTemplateLiterals", Napi::Function::New(env, EncodeResult_ToJSTemplateLiterals, "toJSTemplateLiterals"));
 
-    encodeResultConstructor = Napi::Persistent(ctor);
-    encodeResultConstructor.SuppressDestruct();
+    AddonData* addonData = new AddonData();
+    addonData->encodeResultConstructor = Napi::Persistent(ctor);
+    env.SetInstanceData<AddonData>(addonData);
 
     Napi::Object defaultObj = Napi::Object::New(env);
 
