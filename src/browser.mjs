@@ -166,7 +166,7 @@ export function parseJSTemplateLiterals(input) {
     var m
     var i = start + 1
     var out = ''
-    const re = /[\\`$]/g
+    const re = /[\\`$\r]/g
     re.lastIndex = i
 
     function hexVal(endIndex) {
@@ -196,6 +196,16 @@ export function parseJSTemplateLiterals(input) {
         }
 
         const c = input.charCodeAt(idx)
+        // '\r'
+        if (c === 13) {
+            out += '\n'
+            i = idx + 1
+            // '\n'
+            if (i < end && input.charCodeAt(i) === 10)
+                i++
+            re.lastIndex = i
+            continue
+        }
         // '`'
         if (c === 96) throw SyntaxError(err)
         // '$'
@@ -244,12 +254,11 @@ export function parseJSTemplateLiterals(input) {
                 if (afterNext < end && input.charCodeAt(afterNext) === 123) {
                     const startHex = afterNext + 1
                     let cp = 0
-                    const maxScan = Math.min(end, startHex + 7)
-                    for (let k = startHex; k < maxScan; k++) {
+                    for (let k = startHex; k < end; k++) {
                         const ch = input.charCodeAt(k)
                         // '}'
                         if (ch === 125) {
-                            if (k === startHex || cp > 0x10FFFF) throw SyntaxError(err);
+                            if (k === startHex) throw SyntaxError(err);
                             out += String.fromCodePoint(cp)
                             i = k + 1
                             break SWITCH
@@ -263,6 +272,7 @@ export function parseJSTemplateLiterals(input) {
                             if (lower < 97 || lower > 102) throw SyntaxError(err);
                             cp = (cp << 4) | (lower - 87)
                         }
+                        if (cp > 0x10FFFF) throw SyntaxError(err);
                     }
                     throw SyntaxError(err);
                 }
@@ -274,8 +284,11 @@ export function parseJSTemplateLiterals(input) {
                 if (afterNext < end && input.charCodeAt(afterNext) === 10)
                     i = afterNext + 1
                 break
-            // '\n'
-            case 10: break
+            // '\n', LS (0x2028), PS (0x2029)
+            case 10:
+            case 8232:
+            case 8233:
+                break
             default:
                 // '1' - '9'
                 if (next >= 49 && next <= 57) throw SyntaxError(err);

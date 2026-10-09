@@ -234,8 +234,26 @@ console.log('Cross-compatibility passed:', allSuccess)
 
 console.log('------------------')
 
-// Verify parseJSTemplateLiterals syntax errors (e.g. \1-\9, \0 followed by digit)
+// Verify parseJSTemplateLiterals spec compliance (newline normalization, leading zeros in \u{...}, line continuations)
 for (const impl of [base128, browserBase128, extraBase128].filter(Boolean)) {
+    const specTests = [
+        ['`hello\\r\\nworld`', 'hello\r\nworld'],
+        ['`hello\r\nworld`', 'hello\nworld'],
+        ['`hello\rworld`', 'hello\nworld'],
+        ['`\\u{0000000041}`', 'A'],
+        ['`\\u{000010ffff}`', '\u{10ffff}'],
+        ['`a\\\u2028b`', 'ab'],
+        ['`a\\\u2029b`', 'ab'],
+    ];
+    for (const [input, expected] of specTests) {
+        const actual = impl.parseJSTemplateLiterals(input);
+        if (actual !== expected) {
+            allSuccess = false;
+            throw new Error(`[${impl._impl}] Spec test failed for ${JSON.stringify(input)}: got ${JSON.stringify(actual)}, expected ${JSON.stringify(expected)}`);
+        }
+    }
+
+    // Verify syntax errors (e.g. \1-\9, \0 followed by digit)
     for (const d of ['1', '2', '3', '4', '5', '6', '7', '8', '9']) {
         for (const input of [`\`\\${d}\``, `\`\\0${d}\``]) {
             let threw = false;

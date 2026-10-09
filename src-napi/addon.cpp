@@ -781,7 +781,7 @@ static void ParseJSTemplateLiteralsImpl(const CharT* input, size_t len, ParsedSt
         size_t chunkStart = i;
         while (i < end) {
             CharT c = input[i];
-            if (c == '\\' || c == '`' || c == '$') {
+            if (c == '\\' || c == '`' || c == '$' || c == '\r') {
                 break;
             }
             i++;
@@ -824,6 +824,14 @@ static void ParseJSTemplateLiteralsImpl(const CharT* input, size_t len, ParsedSt
         if (i >= end) break;
 
         CharT c = input[i];
+        if (c == '\r') {
+            if (i + 1 < end && input[i + 1] == '\n') {
+                i++;
+            }
+            pushChar(u'\n');
+            i++;
+            continue;
+        }
         if (c == '`') {
             cleanup();
             return;
@@ -844,7 +852,7 @@ static void ParseJSTemplateLiteralsImpl(const CharT* input, size_t len, ParsedSt
             cleanup();
             return;
         }
-        CharT next = input[i];
+        uint16_t next = static_cast<uint16_t>(static_cast<std::make_unsigned_t<CharT>>(input[i]));
         switch (next) {
             case 'r': pushChar(u'\r'); i++; break;
             case 'n': pushChar(u'\n'); i++; break;
@@ -880,12 +888,11 @@ static void ParseJSTemplateLiteralsImpl(const CharT* input, size_t len, ParsedSt
                 if (i + 1 < end && input[i + 1] == '{') {
                     size_t startHex = i + 2;
                     uint32_t cp = 0;
-                    size_t maxScan = std::min(end, startHex + 7);
                     size_t k = startHex;
-                    for (; k < maxScan; k++) {
+                    for (; k < end; k++) {
                         CharT ch = input[k];
                         if (ch == '}') {
-                            if (k == startHex || cp > 0x10FFFF) {
+                            if (k == startHex) {
                                 cleanup();
                                 return;
                             }
@@ -906,8 +913,12 @@ static void ParseJSTemplateLiteralsImpl(const CharT* input, size_t len, ParsedSt
                             return;
                         }
                         cp = (cp << 4) | hv;
+                        if (cp > 0x10FFFF) {
+                            cleanup();
+                            return;
+                        }
                     }
-                    if (k >= maxScan) {
+                    if (k >= end) {
                         cleanup();
                         return;
                     }
@@ -931,7 +942,9 @@ static void ParseJSTemplateLiteralsImpl(const CharT* input, size_t len, ParsedSt
                 i++;
                 break;
             }
-            case '\n': {
+            case '\n':
+            case 0x2028:
+            case 0x2029: {
                 i++;
                 break;
             }
