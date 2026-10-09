@@ -14,18 +14,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Setup Node
-        uses: actions/setup-node@v7
-        with:
-          node-version: lts/*
-          check-latest: true
-
       - name: Setup pnpm
-        uses: pnpm/action-setup@v6
+        uses: pnpm/setup@v3
         with:
           version: "12"
-
-      - run: pnpm i
+          runtime: node@lts
+          install: true
 
       - run: pnpm test
 
