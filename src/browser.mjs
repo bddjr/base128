@@ -284,10 +284,10 @@ export function parseJSTemplateLiterals(input) {
                 if (afterNext < end && input.charCodeAt(afterNext) === 10)
                     i = afterNext + 1
                 break
-            // '\n', LS (0x2028), PS (0x2029)
+            // '\n', LS, PS
             case 10:
-            case 8232:
-            case 8233:
+            case 0x2028:
+            case 0x2029:
                 break
             default:
                 // '1' - '9'
