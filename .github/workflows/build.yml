@@ -70,7 +70,7 @@ jobs:
         run: node scripts/prepare-subpackage.mjs ${{ matrix.name }}
 
       - name: Upload binding (${{ matrix.name }})
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: binding-${{ matrix.name }}
           path: npm/${{ matrix.name }}/
@@ -106,7 +106,7 @@ jobs:
         run: node scripts/prepare-subpackage.mjs darwin-x64
 
       - name: Upload binding (darwin-x64)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: binding-darwin-x64
           path: npm/darwin-x64/
@@ -156,7 +156,7 @@ jobs:
             "
 
       - name: Upload binding (${{ matrix.name }})
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: binding-${{ matrix.name }}
           path: npm/${{ matrix.name }}/
@@ -181,7 +181,7 @@ jobs:
             node scripts/prepare-subpackage.mjs freebsd-x64
 
       - name: Upload binding (freebsd-x64)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: binding-freebsd-x64
           path: npm/freebsd-x64/
@@ -212,7 +212,7 @@ jobs:
           node scripts/prepare-subpackage.mjs android-arm64 npm/android-arm64/napi.node
 
       - name: Upload binding (android-arm64)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: binding-android-arm64
           path: npm/android-arm64/
@@ -246,7 +246,7 @@ jobs:
           node scripts/prepare-subpackage.mjs openharmony-arm64 npm/openharmony-arm64/napi.node
 
       - name: Upload binding (openharmony-arm64)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: binding-openharmony-arm64
           path: npm/openharmony-arm64/
