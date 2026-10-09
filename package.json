@@ -12,6 +12,7 @@
     "src"
   ],
   "scripts": {
+    "install": "exit",
     "build": "node-gyp rebuild",
     "check": "es-check es6 --checkFeatures --module src/main.cjs src/browser.mjs src/mini-decode.mjs && tsc",
     "test": "pnpm check && pnpm build && node scripts/test.mjs",

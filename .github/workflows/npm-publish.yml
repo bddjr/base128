@@ -42,7 +42,7 @@ jobs:
           if [ -n "${{ matrix.arch }}" ]; then
             pnpm exec node-gyp rebuild --arch=${{ matrix.arch }}
           else
-            pnpm run build
+            pnpm build
           fi
 
       - name: Test
@@ -133,7 +133,7 @@ jobs:
               ${{ matrix.pkg_cmd }}
               npm install -g pnpm --no-ignore-scripts
               pnpm i
-              pnpm run build
+              pnpm test
               node scripts/prepare-subpackage.mjs ${{ matrix.name }}
               chmod -R 777 npm
             "
@@ -160,7 +160,7 @@ jobs:
             sudo pkg install -y node npm python3
             sudo npm install -g pnpm --no-ignore-scripts
             pnpm i
-            pnpm test:only
+            pnpm test
             node scripts/prepare-subpackage.mjs freebsd-x64
 
       - name: Upload binding (freebsd-x64)
