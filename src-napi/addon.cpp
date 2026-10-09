@@ -545,10 +545,8 @@ static Napi::Value EncodeResult_ToString(const Napi::CallbackInfo& info) {
             size_t len = ta.ByteLength();
             napi_value res;
             napi_status status = napi_create_string_latin1(env, data, len, &res);
-            if (status == napi_ok) {
-                return Napi::Value(env, res);
-            }
-            return Napi::String::New(env, data, len);
+            NAPI_THROW_IF_FAILED(env, status, Napi::Value());
+            return Napi::Value(env, res);
         }
     }
     return Napi::String::New(env, "");
