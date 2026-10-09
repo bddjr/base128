@@ -219,8 +219,7 @@ export function parseJSTemplateLiterals(input) {
 
         const nextIdx = idx + 1
         if (nextIdx >= end) throw SyntaxError(err)
-        const afterNext = nextIdx + 1
-        i = afterNext
+        i = nextIdx + 1
         const next = input.charCodeAt(nextIdx)
         SWITCH: switch (next) {
             // 'r'
@@ -238,21 +237,21 @@ export function parseJSTemplateLiterals(input) {
             // '0'
             case 48:
                 // '0' - '9'
-                if (afterNext < end) {
-                    const c = input.charCodeAt(afterNext)
+                if (i < end) {
+                    const c = input.charCodeAt(i)
                     if (c >= 48 && c <= 57) throw SyntaxError(err);
                 }
                 out += '\0'
                 break
             // 'x'
             case 120:
-                out += String.fromCharCode(hexVal(afterNext + 2))
+                out += String.fromCharCode(hexVal(i + 2))
                 break
             // 'u'
             case 117:
                 // '{'
-                if (afterNext < end && input.charCodeAt(afterNext) === 123) {
-                    const startHex = afterNext + 1
+                if (i < end && input.charCodeAt(i) === 123) {
+                    const startHex = i + 1
                     let cp = 0
                     for (let k = startHex; k < end; k++) {
                         const ch = input.charCodeAt(k)
@@ -276,12 +275,12 @@ export function parseJSTemplateLiterals(input) {
                     }
                     throw SyntaxError(err);
                 }
-                out += String.fromCharCode(hexVal(afterNext + 4))
+                out += String.fromCharCode(hexVal(i + 4))
                 break
             // '\r'
             case 13:
                 // '\n'
-                if (afterNext < end && input.charCodeAt(afterNext) === 10)
+                if (i < end && input.charCodeAt(i) === 10)
                     i++
                 break
             // '\n', LS, PS
