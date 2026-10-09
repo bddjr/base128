@@ -34,6 +34,40 @@ static const bool kIsSpecialChar[256] = {
 #include <arm_neon.h>
 #endif
 
+static inline void Widen8To16(const uint8_t* src, char16_t* dst, size_t len) {
+#if defined(__x86_64__) || defined(_M_X64)
+    size_t i = 0;
+    const __m128i zero = _mm_setzero_si128();
+    for (; i + 32 <= len; i += 32) {
+        __m128i v0 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src + i));
+        __m128i v1 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src + i + 16));
+        _mm_storeu_si128(reinterpret_cast<__m128i*>(dst + i), _mm_unpacklo_epi8(v0, zero));
+        _mm_storeu_si128(reinterpret_cast<__m128i*>(dst + i + 8), _mm_unpackhi_epi8(v0, zero));
+        _mm_storeu_si128(reinterpret_cast<__m128i*>(dst + i + 16), _mm_unpacklo_epi8(v1, zero));
+        _mm_storeu_si128(reinterpret_cast<__m128i*>(dst + i + 24), _mm_unpackhi_epi8(v1, zero));
+    }
+    for (; i < len; i++) {
+        dst[i] = static_cast<char16_t>(src[i]);
+    }
+#elif defined(__aarch64__) || defined(_M_ARM64)
+    size_t i = 0;
+    for (; i + 16 <= len; i += 16) {
+        uint8x16_t v = vld1q_u8(src + i);
+        uint16x8_t lo = vmovl_u8(vget_low_u8(v));
+        uint16x8_t hi = vmovl_u8(vget_high_u8(v));
+        vst1q_u16(reinterpret_cast<uint16_t*>(dst + i), lo);
+        vst1q_u16(reinterpret_cast<uint16_t*>(dst + i + 8), hi);
+    }
+    for (; i < len; i++) {
+        dst[i] = static_cast<char16_t>(src[i]);
+    }
+#else
+    for (size_t i = 0; i < len; i++) {
+        dst[i] = static_cast<char16_t>(src[i]);
+    }
+#endif
+}
+
 static Napi::Value MakeLatin1String(napi_env env, char* buf, size_t len) {
     if (len >= 1024) {
 #if NAPI_VERSION >= 10
@@ -292,9 +326,7 @@ static inline void EscapeToTemplateLiterals(const CharT* src, size_t len, Parsed
             buf8 = nullptr;
             return false;
         }
-        for (size_t k = 0; k < out_len; k++) {
-            buf16[k] = static_cast<uint8_t>(buf8[k]);
-        }
+        Widen8To16(reinterpret_cast<const uint8_t*>(buf8), buf16, out_len);
         std::free(buf8);
         buf8 = nullptr;
         is_one_byte = false;
@@ -764,9 +796,7 @@ static void ParseJSTemplateLiteralsImpl(const CharT* input, size_t len, ParsedSt
             cleanup();
             return false;
         }
-        for (size_t k = 0; k < out_len; k++) {
-            buf16[k] = static_cast<uint8_t>(buf8[k]);
-        }
+        Widen8To16(reinterpret_cast<const uint8_t*>(buf8), buf16, out_len);
         std::free(buf8);
         buf8 = nullptr;
         is_one_byte = false;
@@ -809,9 +839,7 @@ static void ParseJSTemplateLiteralsImpl(const CharT* input, size_t len, ParsedSt
                     }
                     if (has_wide) {
                         if (!switchToTwoByte()) return;
-                        for (size_t k = 0; k < chunkLen; k++) {
-                            buf16[out_len + k] = static_cast<char16_t>(input[chunkStart + k]);
-                        }
+                        std::memcpy(buf16 + out_len, input + chunkStart, chunkLen * sizeof(char16_t));
                     } else {
                         for (size_t k = 0; k < chunkLen; k++) {
                             buf8[out_len + k] = static_cast<char>(input[chunkStart + k]);
@@ -820,9 +848,7 @@ static void ParseJSTemplateLiteralsImpl(const CharT* input, size_t len, ParsedSt
                 }
             } else {
                 if constexpr (sizeof(CharT) == 1) {
-                    for (size_t k = 0; k < chunkLen; k++) {
-                        buf16[out_len + k] = static_cast<uint8_t>(input[chunkStart + k]);
-                    }
+                    Widen8To16(reinterpret_cast<const uint8_t*>(input + chunkStart), buf16 + out_len, chunkLen);
                 } else {
                     std::memcpy(buf16 + out_len, input + chunkStart, chunkLen * sizeof(char16_t));
                 }
