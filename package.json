@@ -1,6 +1,6 @@
 {
   "name": "base128-ascii",
-  "version": "6.2.1",
+  "version": "6.2.2",
   "author": "bddjr",
   "description": "Smaller than base64, only use ASCII, can run in web browser.",
   "license": "Unlicense",
