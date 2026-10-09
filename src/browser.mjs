@@ -251,15 +251,14 @@ export function parseJSTemplateLiterals(input) {
             case 117:
                 // '{'
                 if (i < end && input.charCodeAt(i) === 123) {
-                    const startHex = i + 1
-                    let cp = 0
-                    for (let k = startHex; k < end; k++) {
-                        const ch = input.charCodeAt(k)
+                    const startHex = ++i
+                    for (let cp = 0; i < end; i++) {
+                        const ch = input.charCodeAt(i)
                         // '}'
                         if (ch === 125) {
-                            if (k === startHex) throw SyntaxError(err);
+                            if (i === startHex) throw SyntaxError(err);
                             out += String.fromCodePoint(cp)
-                            i = k + 1
+                            i++
                             break SWITCH
                         }
                         // '0' - '9'
