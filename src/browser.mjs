@@ -225,16 +225,6 @@ export function parseJSTemplateLiterals(input) {
             case 102: out += '\f'; break
             // 'v'
             case 118: out += '\v'; break
-            // '\\'
-            case 92: out += '\\'; break
-            // '`'
-            case 96: out += '`'; break
-            // "'"
-            case 39: out += "'"; break
-            // '"'
-            case 34: out += '"'; break
-            // '$'
-            case 36: out += '$'; break
             // '0'
             case 48:
                 // '0' - '9'
