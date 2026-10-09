@@ -234,6 +234,24 @@ console.log('Cross-compatibility passed:', allSuccess)
 
 console.log('------------------')
 
+// Verify parseJSTemplateLiterals syntax errors (e.g. \1-\9, \0 followed by digit)
+for (const impl of [base128, browserBase128, extraBase128].filter(Boolean)) {
+    for (const d of ['1', '2', '3', '4', '5', '6', '7', '8', '9']) {
+        for (const input of [`\`\\${d}\``, `\`\\0${d}\``]) {
+            let threw = false;
+            try {
+                impl.parseJSTemplateLiterals(input);
+            } catch (e) {
+                threw = e instanceof SyntaxError;
+            }
+            if (!threw) {
+                allSuccess = false;
+                throw new Error(`[${impl._impl}] Expected SyntaxError for invalid escape: ${input}`);
+            }
+        }
+    }
+}
+
 // base128.encode(class { static buffer = new ArrayBuffer })
 
 console.log('allSuccess:', allSuccess)

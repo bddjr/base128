@@ -277,6 +277,8 @@ export function parseJSTemplateLiterals(input) {
             // '\n'
             case 10: break
             default:
+                // '1' - '9'
+                if (next >= 49 && next <= 57) throw SyntaxError(err);
                 out += input[nextIdx]
         }
         re.lastIndex = i

@@ -936,6 +936,10 @@ static void ParseJSTemplateLiteralsImpl(const CharT* input, size_t len, ParsedSt
                 break;
             }
             default: {
+                if (next >= '1' && next <= '9') {
+                    cleanup();
+                    return;
+                }
                 pushChar(static_cast<char16_t>(next));
                 i++;
                 break;
