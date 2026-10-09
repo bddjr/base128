@@ -80,9 +80,7 @@ jobs:
         with:
           version: "12"
 
-      - run: |
-          pnpm i typescript@6
-          pnpm i
+      - run: pnpm i
 
       - run: pnpm run check
 
