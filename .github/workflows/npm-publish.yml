@@ -280,7 +280,7 @@ jobs:
       - run: pnpm i
 
       - name: Download all bindings
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           pattern: binding-*
           path: downloaded-bindings
