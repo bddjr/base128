@@ -173,15 +173,15 @@ export function parseJSTemplateLiterals(input) {
         if (endIndex > end) throw SyntaxError(err);
         var val = 0
         for (; i < endIndex; i++) {
-            const c = input.charCodeAt(i)
+            let c = input.charCodeAt(i)
             // '0' - '9'
             if (c >= 48 && c <= 57) {
                 val = (val << 4) | (c - 48)
             } else {
-                const lower = c | 32
+                c |= 32
                 // 'a' - 'f'
-                if (lower < 97 || lower > 102) throw SyntaxError(err);
-                val = (val << 4) | (lower - 87)
+                if (c < 97 || c > 102) throw SyntaxError(err);
+                val = (val << 4) | (c - 87)
             }
         }
         return val
@@ -203,8 +203,7 @@ export function parseJSTemplateLiterals(input) {
             // '{'
             if (idx + 1 < end && input.charCodeAt(idx + 1) === 123) throw SyntaxError(err)
             out += '$'
-            i = idx + 1
-            re.lastIndex = i
+            re.lastIndex = i = idx + 1
             continue
         }
 
@@ -213,7 +212,7 @@ export function parseJSTemplateLiterals(input) {
         const afterNext = nextIdx + 1
         i = afterNext
         const next = input.charCodeAt(nextIdx)
-        switch (next) {
+        SWITCH: switch (next) {
             // 'r'
             case 114: out += '\r'; break
             // 'n'
@@ -237,7 +236,7 @@ export function parseJSTemplateLiterals(input) {
             // '$'
             case 36: out += '$'; break
             // '0'
-            case 48: {
+            case 48:
                 // '0' - '9'
                 if (afterNext < end) {
                     const c = input.charCodeAt(afterNext)
@@ -245,14 +244,12 @@ export function parseJSTemplateLiterals(input) {
                 }
                 out += '\0'
                 break
-            }
             // 'x'
-            case 120: {
+            case 120:
                 out += String.fromCharCode(hexVal(afterNext + 2))
                 break
-            }
             // 'u'
-            case 117: a: {
+            case 117:
                 // '{'
                 if (afterNext < end && input.charCodeAt(afterNext) === 123) {
                     const startHex = afterNext + 1
@@ -265,7 +262,7 @@ export function parseJSTemplateLiterals(input) {
                             if (k === startHex || cp > 0x10FFFF) throw SyntaxError(err);
                             out += String.fromCodePoint(cp)
                             i = k + 1
-                            break a
+                            break SWITCH
                         }
                         // '0' - '9'
                         if (ch >= 48 && ch <= 57) {
@@ -281,19 +278,16 @@ export function parseJSTemplateLiterals(input) {
                 }
                 out += String.fromCharCode(hexVal(afterNext + 4))
                 break
-            }
             // '\r'
-            case 13: {
+            case 13:
                 // '\n'
                 if (afterNext < end && input.charCodeAt(afterNext) === 10)
                     i = afterNext + 1
                 break
-            }
             // '\n'
             case 10: break
             default:
                 out += input[nextIdx]
-                break
         }
         re.lastIndex = i
     }
