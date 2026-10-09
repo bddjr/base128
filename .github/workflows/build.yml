@@ -231,7 +231,7 @@ jobs:
           install: true
 
       - name: Setup OpenHarmony SDK
-        uses: openharmony-rs/setup-ohos-sdk@v1.0.1
+        uses: openharmony-rs/setup-ohos-sdk@v1
 
       - name: Build OpenHarmony binding
         run: |
