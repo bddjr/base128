@@ -282,7 +282,7 @@ export function parseJSTemplateLiterals(input) {
             case 13:
                 // '\n'
                 if (afterNext < end && input.charCodeAt(afterNext) === 10)
-                    i = afterNext + 1
+                    i++
                 break
             // '\n', LS, PS
             case 10:

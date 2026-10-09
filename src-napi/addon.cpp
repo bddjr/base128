@@ -938,8 +938,7 @@ static void ParseJSTemplateLiteralsImpl(const CharT* input, size_t len, ParsedSt
                 break;
             }
             case '\r': {
-                if (i + 1 < end && input[i + 1] == '\n') i++;
-                i++;
+                if (++i < end && input[i] == '\n') i++;
                 break;
             }
             case '\n':
