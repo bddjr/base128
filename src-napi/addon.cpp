@@ -95,7 +95,7 @@ static Napi::Value MakeLatin1String(napi_env env, char* buf, size_t len) {
 }
 
 static Napi::Value MakeUtf16String(napi_env env, char16_t* buf, size_t len) {
-    if (len >= 1024) {
+    if (len >= 512) {
 #if NAPI_VERSION >= 10
         bool copied = false;
         napi_value res;
