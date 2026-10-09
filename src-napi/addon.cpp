@@ -718,18 +718,12 @@ static Napi::Value Decode(const Napi::CallbackInfo& info) {
     }
 #endif
 
-    napi_value str_val = info[0];
-    size_t il = 0;
-    napi_get_value_string_latin1(env, str_val, nullptr, 0, &il);
-    std::string str_holder;
-    str_holder.resize(il);
-    size_t copied = 0;
-    napi_get_value_string_latin1(env, str_val, &str_holder[0], il + 1, &copied);
-
+    std::u16string str_holder = info[0].As<Napi::String>().Utf16Value();
+    size_t il = str_holder.length();
     size_t out_len = (il * 7) / 8;
     Napi::ArrayBuffer ab = Napi::ArrayBuffer::New(env, out_len);
     uint8_t* out = reinterpret_cast<uint8_t*>(ab.Data());
-    DecodeImpl(reinterpret_cast<const uint8_t*>(str_holder.data()), il, out);
+    DecodeImpl(reinterpret_cast<const char16_t*>(str_holder.data()), il, out);
     return Napi::Uint8Array::New(env, out_len, ab, 0);
 }
 
