@@ -89,13 +89,9 @@ static Napi::Value MakeLatin1String(napi_env env, char* buf, size_t len) {
     }
     napi_value res;
     napi_status status = napi_create_string_latin1(env, buf, len, &res);
-    if (status == napi_ok) {
-        std::free(buf);
-        return Napi::Value(env, res);
-    }
-    Napi::Value fallback = Napi::String::New(env, buf, len);
     std::free(buf);
-    return fallback;
+    NAPI_THROW_IF_FAILED(env, status, Napi::Value());
+    return Napi::Value(env, res);
 }
 
 static Napi::Value MakeUtf16String(napi_env env, char16_t* buf, size_t len) {
@@ -119,13 +115,9 @@ static Napi::Value MakeUtf16String(napi_env env, char16_t* buf, size_t len) {
     }
     napi_value res;
     napi_status status = napi_create_string_utf16(env, buf, len, &res);
-    if (status == napi_ok) {
-        std::free(buf);
-        return Napi::Value(env, res);
-    }
-    Napi::Value fallback = Napi::String::New(env, buf, len);
     std::free(buf);
-    return fallback;
+    NAPI_THROW_IF_FAILED(env, status, Napi::Value());
+    return Napi::Value(env, res);
 }
 
 struct ParsedStringResult {
