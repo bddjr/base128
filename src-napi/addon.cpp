@@ -751,30 +751,38 @@ static void ParseJSTemplateLiteralsImpl(const CharT* input, size_t len, ParsedSt
     auto cleanup = [&]() {
         if (is_one_byte) {
             std::free(buf8);
+            buf8 = nullptr;
         } else {
             std::free(buf16);
+            buf16 = nullptr;
         }
     };
 
-    auto switchToTwoByte = [&]() {
+    auto switchToTwoByte = [&]() -> bool {
         buf16 = static_cast<char16_t*>(std::malloc(cap * sizeof(char16_t)));
+        if (!buf16) {
+            cleanup();
+            return false;
+        }
         for (size_t k = 0; k < out_len; k++) {
             buf16[k] = static_cast<uint8_t>(buf8[k]);
         }
         std::free(buf8);
         buf8 = nullptr;
         is_one_byte = false;
+        return true;
     };
 
-    auto pushChar = [&](char16_t ch) {
+    auto pushChar = [&](char16_t ch) -> bool {
         if (is_one_byte) {
             if (ch <= 255) {
                 buf8[out_len++] = static_cast<char>(ch);
-                return;
+                return true;
             }
-            switchToTwoByte();
+            if (!switchToTwoByte()) return false;
         }
         buf16[out_len++] = ch;
+        return true;
     };
 
     while (i < end) {
@@ -800,7 +808,7 @@ static void ParseJSTemplateLiteralsImpl(const CharT* input, size_t len, ParsedSt
                         }
                     }
                     if (has_wide) {
-                        switchToTwoByte();
+                        if (!switchToTwoByte()) return;
                         for (size_t k = 0; k < chunkLen; k++) {
                             buf16[out_len + k] = static_cast<char16_t>(input[chunkStart + k]);
                         }
@@ -897,10 +905,10 @@ static void ParseJSTemplateLiteralsImpl(const CharT* input, size_t len, ParsedSt
                                 return;
                             }
                             if (cp <= 0xFFFF) {
-                                pushChar(static_cast<char16_t>(cp));
+                                if (!pushChar(static_cast<char16_t>(cp))) return;
                             } else {
                                 cp -= 0x10000;
-                                if (is_one_byte) switchToTwoByte();
+                                if (is_one_byte && !switchToTwoByte()) return;
                                 buf16[out_len++] = static_cast<char16_t>(0xD800 + (cp >> 10));
                                 buf16[out_len++] = static_cast<char16_t>(0xDC00 + (cp & 0x3FF));
                             }
@@ -933,7 +941,7 @@ static void ParseJSTemplateLiteralsImpl(const CharT* input, size_t len, ParsedSt
                 if (h3 == -1) { cleanup(); return; }
                 int h4 = HexVal(input[i + 4]);
                 if (h4 == -1) { cleanup(); return; }
-                pushChar(static_cast<char16_t>((h1 << 12) | (h2 << 8) | (h3 << 4) | h4));
+                if (!pushChar(static_cast<char16_t>((h1 << 12) | (h2 << 8) | (h3 << 4) | h4))) return;
                 i += 5;
                 break;
             }
@@ -952,7 +960,7 @@ static void ParseJSTemplateLiteralsImpl(const CharT* input, size_t len, ParsedSt
                     cleanup();
                     return;
                 }
-                pushChar(static_cast<char16_t>(next));
+                if (!pushChar(static_cast<char16_t>(next))) return;
                 i++;
                 break;
             }
