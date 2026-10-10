@@ -1,5 +1,3 @@
 {
-    "files.eol": "\n",
-    "js/ts.implicitProjectConfig.target": "ES6",
-    "js/ts.implicitProjectConfig.checkJs": false
+    "files.eol": "\n"
 }
