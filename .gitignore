@@ -1,8 +1,9 @@
 node_modules
 dist
 build
-testdata/output
+/testdata/output
 prebuilds
-npm/**/*.node
+/npm/**/*.node
 downloaded-bindings
 target
+/binding.gyp
