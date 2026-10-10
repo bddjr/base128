@@ -18,11 +18,12 @@ jobs:
             name: linux-arm64-gnu
           - os: windows-latest
             name: win32-x64-msvc
-          - os: windows-latest
+          - os: windows-11-arm
             name: win32-arm64-msvc
-            arch: arm64
           - os: macos-latest
             name: darwin-arm64
+          - os: macos-15-intel
+            name: darwin-x64
     steps:
       - uses: actions/checkout@v7
 
@@ -36,35 +37,24 @@ jobs:
       - run: pnpm run check
 
       - name: Build native addon
-        shell: bash
-        run: |
-          if [ -n "${{ matrix.arch }}" ]; then
-            pnpm build --arch=${{ matrix.arch }}
-          else
-            pnpm build
-          fi
+        run: pnpm build
 
       - name: Test
-        if: ${{ !matrix.arch }}
         run: pnpm test:only
 
       - name: Setup Deno
-        if: ${{ !matrix.arch }}
         uses: denoland/setup-deno@v2
         with:
           deno-version: latest
 
-      - if: ${{ !matrix.arch }}
-        run: deno run test:deno
+      - run: deno run test:deno
 
       - name: Setup Bun
-        if: ${{ !matrix.arch }}
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
 
-      - if: ${{ !matrix.arch }}
-        run: bun test:bun
+      - run: bun test:bun
 
       - name: Prepare subpackage (${{ matrix.name }})
         run: node scripts/prepare-subpackage.mjs ${{ matrix.name }}
@@ -75,59 +65,25 @@ jobs:
           name: binding-${{ matrix.name }}
           path: npm/${{ matrix.name }}/
 
-  build-darwin-x64:
-    name: build (darwin-x64)
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: lts/*
-          check-latest: true
-          architecture: x64
-
-      - name: Setup pnpm
-        uses: pnpm/setup@v3
-        with:
-          version: "12"
-          node-version-file: false
-          install: true
-
-      - run: pnpm run check
-
-      - name: Build native addon
-        run: pnpm run build
-
-      - name: Test
-        run: pnpm test:only
-
-      - name: Prepare subpackage (darwin-x64)
-        run: node scripts/prepare-subpackage.mjs darwin-x64
-
-      - name: Upload binding (darwin-x64)
-        uses: actions/upload-artifact@v7
-        with:
-          name: binding-darwin-x64
-          path: npm/darwin-x64/
-
   build-container:
     name: build (${{ matrix.name }})
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - name: linux-x64-musl
+          - os: ubuntu-latest
+            name: linux-x64-musl
             image: node:lts-alpine
             platform: linux/amd64
             pkg_cmd: apk add --no-cache python3 make g++
-          - name: linux-arm64-musl
+          - os: ubuntu-24.04-arm
+            name: linux-arm64-musl
             image: node:lts-alpine
             platform: linux/arm64
             pkg_cmd: apk add --no-cache python3 make g++
-            qemu: true
-          - name: linux-ppc64-gnu
+          - os: ubuntu-latest
+            name: linux-ppc64-gnu
             image: node:lts-bookworm-slim
             platform: linux/ppc64le
             pkg_cmd: apt-get update && apt-get install -y python3 make g++
