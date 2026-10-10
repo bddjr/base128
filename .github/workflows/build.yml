@@ -39,7 +39,7 @@ jobs:
         shell: bash
         run: |
           if [ -n "${{ matrix.arch }}" ]; then
-            pnpm exec node-gyp rebuild --arch=${{ matrix.arch }}
+            pnpm build --arch=${{ matrix.arch }}
           else
             pnpm build
           fi
