@@ -34,13 +34,7 @@ jobs:
           runtime: node@lts
           install: true
 
-      - run: pnpm run check
-
-      - name: Build native addon
-        run: pnpm build
-
-      - name: Test
-        run: pnpm test:only
+      - run: pnpm test
 
       - name: Setup Deno
         uses: denoland/setup-deno@v2
@@ -123,18 +117,26 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Build in FreeBSD VM
+      - name: Start VM
         uses: cross-platform-actions/action@v1
         with:
           operating_system: freebsd
           version: "14.0"
           shell: bash
-          run: |
-            sudo pkg install -y node npm python3
-            sudo npm install -g pnpm --no-ignore-scripts
-            pnpm i
-            pnpm test
-            node scripts/prepare-subpackage.mjs freebsd-x64
+
+      - name: Setup
+        shell: cpa.sh {0}
+        run: |
+          sudo pkg install -y node npm python3
+          sudo npm install -g pnpm --no-ignore-scripts
+          pnpm i
+
+      - shell: cpa.sh {0}
+        run: pnpm test
+
+      - name: Prepare subpackage freebsd-x64
+        shell: cpa.sh {0}
+        run: node scripts/prepare-subpackage.mjs freebsd-x64
 
       - name: Upload binding (freebsd-x64)
         uses: actions/upload-artifact@v7
