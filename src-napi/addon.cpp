@@ -667,14 +667,12 @@ static Napi::Value EncodeResult_ToString(const Napi::CallbackInfo& info) {
     size_t len = 0;
     napi_status status = napi_get_typedarray_info(
         env, bytesVal, nullptr, &len, &data_ptr, nullptr, nullptr);
-    if (status == napi_ok) {
-        const char* data = static_cast<const char*>(data_ptr ? data_ptr : "");
-        napi_value res;
-        status = napi_create_string_latin1(env, data, len, &res);
-        NAPI_THROW_IF_FAILED(env, status, Napi::Value());
-        return Napi::Value(env, res);
-    }
-    return Napi::String::New(env, "", 0);
+    NAPI_THROW_IF_FAILED(env, status, env.Null());
+    const char* data = static_cast<const char*>(data_ptr ? data_ptr : "");
+    napi_value res;
+    status = napi_create_string_latin1(env, data, len, &res);
+    NAPI_THROW_IF_FAILED(env, status, Napi::Value());
+    return Napi::Value(env, res);
 }
 
 static Napi::Value EncodeResult_ToJSTemplateLiterals(const Napi::CallbackInfo& info) {
