@@ -6,6 +6,7 @@
 #include <v8.h>
 #include <v8-primitive.h>
 #endif
+#include <array>
 #include <string>
 #include <vector>
 #include <algorithm>
@@ -17,15 +18,16 @@ struct AddonData {
     Napi::FunctionReference encodeResultConstructor;
 };
 
-static const bool kIsSpecialChar[256] = {
-    1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, // 0: \0, 13: \r
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 36: $
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, // 60: <
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, // 92: backslash
-    1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0  // 96: `
-};
+static constexpr auto kIsSpecialChar = []() constexpr {
+    std::array<bool, 256> table{};
+    table['\0'] = true;
+    table['\r'] = true;
+    table['$']  = true;
+    table['<']  = true;
+    table['\\'] = true;
+    table['`']  = true;
+    return table;
+}();
 
 #if defined(_MSC_VER)
 #include <intrin.h>
