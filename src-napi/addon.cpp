@@ -642,25 +642,37 @@ static Napi::Value EncodeResult_Constructor(const Napi::CallbackInfo& info) {
     return self;
 }
 
+static inline bool IsUint8Array(const Napi::Value& val) {
+    if (!val.IsTypedArray()) return false;
+    napi_typedarray_type type = val.As<Napi::TypedArray>().TypedArrayType();
+    return type == napi_uint8_array || type == napi_uint8_clamped_array;
+}
+
 static Napi::Value EncodeResult_ToString(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
     Napi::Value self = info.This();
-    if (self.IsObject()) {
-        Napi::Object obj = self.As<Napi::Object>();
-        Napi::Value bytesVal = obj.Get("bytes");
-        if (bytesVal.IsTypedArray()) {
-            void* data_ptr = nullptr;
-            size_t len = 0;
-            napi_status status = napi_get_typedarray_info(
-                env, bytesVal, nullptr, &len, &data_ptr, nullptr, nullptr);
-            if (status == napi_ok) {
-                const char* data = static_cast<const char*>(data_ptr ? data_ptr : "");
-                napi_value res;
-                status = napi_create_string_latin1(env, data, len, &res);
-                NAPI_THROW_IF_FAILED(env, status, Napi::Value());
-                return Napi::Value(env, res);
-            }
-        }
+    if (!self.IsObject()) {
+        Napi::TypeError::New(env, "EncodeResult.prototype.toString: 'this' must be an object")
+            .ThrowAsJavaScriptException();
+        return env.Null();
+    }
+    Napi::Object obj = self.As<Napi::Object>();
+    Napi::Value bytesVal = obj.Get("bytes");
+    if (!IsUint8Array(bytesVal)) {
+        Napi::TypeError::New(env, "EncodeResult.prototype.toString: 'this.bytes' must be a Uint8Array or Uint8ClampedArray")
+            .ThrowAsJavaScriptException();
+        return env.Null();
+    }
+    void* data_ptr = nullptr;
+    size_t len = 0;
+    napi_status status = napi_get_typedarray_info(
+        env, bytesVal, nullptr, &len, &data_ptr, nullptr, nullptr);
+    if (status == napi_ok) {
+        const char* data = static_cast<const char*>(data_ptr ? data_ptr : "");
+        napi_value res;
+        status = napi_create_string_latin1(env, data, len, &res);
+        NAPI_THROW_IF_FAILED(env, status, Napi::Value());
+        return Napi::Value(env, res);
     }
     return Napi::String::New(env, "");
 }
@@ -743,13 +755,6 @@ static Napi::Value EncodeResult_ToJSTemplateLiterals(const Napi::CallbackInfo& i
     return MakeUtf16String(env, static_cast<char16_t*>(res.buf), res.len);
 }
 
-static inline bool IsUint8Array(const Napi::Value& val) {
-    if (!val.IsTypedArray()) {
-        return false;
-    }
-    napi_typedarray_type type = val.As<Napi::TypedArray>().TypedArrayType();
-    return type == napi_uint8_array || type == napi_uint8_clamped_array;
-}
 
 static Napi::Value Encode(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
