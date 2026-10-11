@@ -36,6 +36,11 @@ static constexpr auto kIsSpecialChar = []() constexpr {
 #include <immintrin.h>
 #elif defined(__aarch64__) || defined(_M_ARM64)
 #include <arm_neon.h>
+#elif (defined(__PPC64__) || defined(__ppc64__) || defined(_ARCH_PPC64)) && defined(__ALTIVEC__)
+#include <altivec.h>
+#undef bool
+#undef vector
+#undef pixel
 #endif
 
 static inline void Widen8To16(const uint8_t* src, char16_t* dst, size_t len) {
@@ -61,6 +66,24 @@ static inline void Widen8To16(const uint8_t* src, char16_t* dst, size_t len) {
         uint16x8_t hi = vmovl_u8(vget_high_u8(v));
         vst1q_u16(reinterpret_cast<uint16_t*>(dst + i), lo);
         vst1q_u16(reinterpret_cast<uint16_t*>(dst + i + 8), hi);
+    }
+    for (; i < len; i++) {
+        dst[i] = static_cast<char16_t>(src[i]);
+    }
+#elif (defined(__PPC64__) || defined(__ppc64__) || defined(_ARCH_PPC64)) && defined(__ALTIVEC__)
+    size_t i = 0;
+    const __vector unsigned char zero = vec_splats(static_cast<unsigned char>(0));
+    for (; i + 16 <= len; i += 16) {
+        __vector unsigned char v = vec_xl(0, const_cast<unsigned char*>(src + i));
+#if defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
+        __vector unsigned char lo = vec_mergeh(v, zero);
+        __vector unsigned char hi = vec_mergel(v, zero);
+#else
+        __vector unsigned char lo = vec_mergeh(zero, v);
+        __vector unsigned char hi = vec_mergel(zero, v);
+#endif
+        vec_xst(lo, 0, reinterpret_cast<unsigned char*>(dst + i));
+        vec_xst(hi, 0, reinterpret_cast<unsigned char*>(dst + i + 8));
     }
     for (; i < len; i++) {
         dst[i] = static_cast<char16_t>(src[i]);
@@ -266,6 +289,47 @@ static inline char* EscapeBytesToTemplateLiterals(const char* src, size_t len, s
                     i += 8 + (__builtin_ctzll(hi) >> 3);
 #endif
                 }
+                break;
+            }
+            i += 16;
+        }
+#elif (defined(__PPC64__) || defined(__ppc64__) || defined(_ARCH_PPC64)) && defined(__ALTIVEC__)
+        const __vector unsigned char v0  = vec_splats(static_cast<unsigned char>(0));
+        const __vector unsigned char v13 = vec_splats(static_cast<unsigned char>(13));
+        const __vector unsigned char v36 = vec_splats(static_cast<unsigned char>(36));
+        const __vector unsigned char v60 = vec_splats(static_cast<unsigned char>(60));
+        const __vector unsigned char v92 = vec_splats(static_cast<unsigned char>(92));
+        const __vector unsigned char v96 = vec_splats(static_cast<unsigned char>(96));
+        const __vector unsigned char zero = vec_splats(static_cast<unsigned char>(0));
+
+        while (i + 16 <= len) {
+            __vector unsigned char v = vec_xl(0, reinterpret_cast<const unsigned char*>(src + i));
+            __vector bool char m0  = vec_cmpeq(v, v0);
+            __vector bool char m13 = vec_cmpeq(v, v13);
+            __vector bool char m36 = vec_cmpeq(v, v36);
+            __vector bool char m60 = vec_cmpeq(v, v60);
+            __vector bool char m92 = vec_cmpeq(v, v92);
+            __vector bool char m96 = vec_cmpeq(v, v96);
+            __vector bool char any = vec_or(vec_or(m0, m13),
+                                     vec_or(vec_or(m36, m60), vec_or(m92, m96)));
+            if (vec_any_ne(((__vector unsigned char)any), zero)) {
+#if defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
+                uint64_t lo = vec_extract(((__vector unsigned long long)any), 0);
+                uint64_t hi = vec_extract(((__vector unsigned long long)any), 1);
+                if (lo != 0) {
+                    i += (__builtin_ctzll(lo) >> 3);
+                } else {
+                    i += 8 + (__builtin_ctzll(hi) >> 3);
+                }
+#else
+                uint64_t hi = vec_extract(((__vector unsigned long long)any), 0);
+                uint64_t lo = vec_extract(((__vector unsigned long long)any), 1);
+                if (hi != 0) {
+                    i += (__builtin_clzll(hi) >> 3);
+                } else {
+                    i += 8 + (__builtin_clzll(lo) >> 3);
+                }
+#endif
                 break;
             }
             i += 16;
