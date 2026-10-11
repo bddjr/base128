@@ -16,7 +16,15 @@
 
 struct AddonData {
     Napi::FunctionReference encodeResultConstructor;
+    ~AddonData() {
+        encodeResultConstructor.Reset();
+    }
 };
+
+static void CleanupAddonData(Napi::Env /*env*/, AddonData* data) {
+    delete data;
+}
+
 
 static constexpr auto kIsSpecialChar = []() constexpr {
     std::array<bool, 256> table{};
@@ -641,13 +649,17 @@ static Napi::Value EncodeResult_ToString(const Napi::CallbackInfo& info) {
         Napi::Object obj = self.As<Napi::Object>();
         Napi::Value bytesVal = obj.Get("bytes");
         if (bytesVal.IsTypedArray()) {
-            Napi::TypedArray ta = bytesVal.As<Napi::TypedArray>();
-            const char* data = reinterpret_cast<const char*>(ta.ArrayBuffer().Data()) + ta.ByteOffset();
-            size_t len = ta.ByteLength();
-            napi_value res;
-            napi_status status = napi_create_string_latin1(env, data, len, &res);
-            NAPI_THROW_IF_FAILED(env, status, Napi::Value());
-            return Napi::Value(env, res);
+            void* data_ptr = nullptr;
+            size_t len = 0;
+            napi_status status = napi_get_typedarray_info(
+                env, bytesVal, nullptr, &len, &data_ptr, nullptr, nullptr);
+            if (status == napi_ok) {
+                const char* data = static_cast<const char*>(data_ptr ? data_ptr : "");
+                napi_value res;
+                status = napi_create_string_latin1(env, data, len, &res);
+                NAPI_THROW_IF_FAILED(env, status, Napi::Value());
+                return Napi::Value(env, res);
+            }
         }
     }
     return Napi::String::New(env, "");
@@ -661,13 +673,17 @@ static Napi::Value EncodeResult_ToJSTemplateLiterals(const Napi::CallbackInfo& i
         Napi::Value bytesVal = self.As<Napi::Object>().Get("bytes");
         if (bytesVal.IsTypedArray()) {
             // Read this.bytes directly to accelerate string construction (guaranteed ASCII Base128)
-            Napi::TypedArray ta = bytesVal.As<Napi::TypedArray>();
-            const char* data = reinterpret_cast<const char*>(ta.ArrayBuffer().Data()) + ta.ByteOffset();
-            size_t len = ta.ByteLength();
-            size_t out_len = 0;
-            char* out_buf = EscapeBytesToTemplateLiterals(data, len, &out_len);
-            if (!out_buf) return env.Null();
-            return MakeLatin1String(env, out_buf, out_len);
+            void* data_ptr = nullptr;
+            size_t len = 0;
+            napi_status status = napi_get_typedarray_info(
+                env, bytesVal, nullptr, &len, &data_ptr, nullptr, nullptr);
+            if (status == napi_ok) {
+                const char* data = static_cast<const char*>(data_ptr ? data_ptr : "");
+                size_t out_len = 0;
+                char* out_buf = EscapeBytesToTemplateLiterals(data, len, &out_len);
+                if (!out_buf) return env.Null();
+                return MakeLatin1String(env, out_buf, out_len);
+            }
         }
     }
 
@@ -729,9 +745,10 @@ static Napi::Value Encode(const Napi::CallbackInfo& info) {
         Napi::TypeError::New(env, "encode: input must be a Uint8Array or Uint8ClampedArray").ThrowAsJavaScriptException();
         return env.Null();
     }
-    Napi::TypedArray input = info[0].As<Napi::TypedArray>();
-    size_t il = input.ByteLength();
-    const uint8_t* in = reinterpret_cast<const uint8_t*>(input.ArrayBuffer().Data()) + input.ByteOffset();
+    void* in_ptr = nullptr;
+    size_t il = 0;
+    napi_get_typedarray_info(env, info[0], nullptr, &il, &in_ptr, nullptr, nullptr);
+    const uint8_t* in = static_cast<const uint8_t*>(in_ptr);
 
     size_t rem = il % 7;
     size_t out_len = (il / 7) * 8;
@@ -1203,7 +1220,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
 
     AddonData* addonData = new AddonData();
     addonData->encodeResultConstructor = Napi::Persistent(ctor);
-    env.SetInstanceData<AddonData>(addonData);
+    env.SetInstanceData<AddonData, CleanupAddonData>(addonData);
 
     Napi::Object defaultObj = Napi::Object::New(env);
 
