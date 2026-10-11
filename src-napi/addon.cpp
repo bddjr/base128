@@ -73,18 +73,30 @@ static inline void Widen8To16(const uint8_t* src, char16_t* dst, size_t len) {
 static Napi::Value MakeLatin1String(napi_env env, char* buf, size_t len) {
 #if NAPI_VERSION >= 10
     if (len >= 1024) {
+        char* nb = static_cast<char*>(std::realloc(buf, len));
+        if (nb) buf = nb;
+
+        int64_t byte_size = static_cast<int64_t>(len);
+        napi_adjust_external_memory(env, byte_size, nullptr);
+
         bool copied = false;
         napi_value res;
         napi_status status = node_api_create_external_string_latin1(
             env, buf, len,
-            [](node_api_basic_env, void* data, void*) {
+            [](node_api_basic_env env, void* data, void* hint) {
+                if (env && hint) {
+                    int64_t bytes = static_cast<int64_t>(reinterpret_cast<uintptr_t>(hint));
+                    napi_adjust_external_memory(env, -bytes, nullptr);
+                }
                 std::free(data);
             },
-            nullptr, &res, &copied);
+            reinterpret_cast<void*>(static_cast<uintptr_t>(byte_size)),
+            &res, &copied);
         if (status == napi_ok) {
             // buf is already freed by finalizer when copied is true, do not double-free here
             return Napi::Value(env, res);
         }
+        napi_adjust_external_memory(env, -byte_size, nullptr);
     }
 #endif
     napi_value res;
@@ -97,18 +109,30 @@ static Napi::Value MakeLatin1String(napi_env env, char* buf, size_t len) {
 static Napi::Value MakeUtf16String(napi_env env, char16_t* buf, size_t len) {
 #if NAPI_VERSION >= 10
     if (len >= 512) {
+        char16_t* nb = static_cast<char16_t*>(std::realloc(buf, len * sizeof(char16_t)));
+        if (nb) buf = nb;
+
+        int64_t byte_size = static_cast<int64_t>(len * sizeof(char16_t));
+        napi_adjust_external_memory(env, byte_size, nullptr);
+
         bool copied = false;
         napi_value res;
         napi_status status = node_api_create_external_string_utf16(
             env, buf, len,
-            [](node_api_basic_env, void* data, void*) {
+            [](node_api_basic_env env, void* data, void* hint) {
+                if (env && hint) {
+                    int64_t bytes = static_cast<int64_t>(reinterpret_cast<uintptr_t>(hint));
+                    napi_adjust_external_memory(env, -bytes, nullptr);
+                }
                 std::free(data);
             },
-            nullptr, &res, &copied);
+            reinterpret_cast<void*>(static_cast<uintptr_t>(byte_size)),
+            &res, &copied);
         if (status == napi_ok) {
             // buf is already freed by finalizer when copied is true, do not double-free here
             return Napi::Value(env, res);
         }
+        napi_adjust_external_memory(env, -byte_size, nullptr);
     }
 #endif
     napi_value res;
