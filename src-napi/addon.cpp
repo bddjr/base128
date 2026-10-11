@@ -149,6 +149,40 @@ struct ParsedStringResult {
     bool error = false;
 };
 
+template <typename CharT>
+static inline bool IsCloseScriptTag(const CharT* src, size_t i, size_t len) {
+    if (i + 7 >= len) return false;
+    if constexpr (sizeof(CharT) == 1) {
+        static const char kTarget[8] = {'<', '/', 's', 'c', 'r', 'i', 'p', 't'};
+        static const char kMask[8]   = {0, 0, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20};
+        uint64_t target, mask;
+        std::memcpy(&target, kTarget, 8);
+        std::memcpy(&mask, kMask, 8);
+
+        uint64_t val;
+        std::memcpy(&val, src + i, 8);
+        return (val | mask) == target;
+    } else {
+        static const char16_t kTarget0[4] = {u'<', u'/', u's', u'c'};
+        static const char16_t kMask0[4]   = {0, 0, 0x20, 0x20};
+        static const char16_t kTarget1[4] = {u'r', u'i', u'p', u't'};
+        static constexpr uint64_t kMask1  = 0x0020002000200020ULL;
+
+        uint64_t target0, mask0, target1;
+        std::memcpy(&target0, kTarget0, 8);
+        std::memcpy(&mask0, kMask0, 8);
+        std::memcpy(&target1, kTarget1, 8);
+
+        uint64_t val0;
+        std::memcpy(&val0, src + i, 8);
+        if ((val0 | mask0) != target0) return false;
+
+        uint64_t val1;
+        std::memcpy(&val1, src + i + 4, 8);
+        return (val1 | kMask1) == target1;
+    }
+}
+
 static inline char* EscapeBytesToTemplateLiterals(const char* src, size_t len, size_t* out_len) {
     size_t cap = len + (len / 4) + 128;
     char* out_buf = static_cast<char*>(std::malloc(cap));
@@ -292,14 +326,7 @@ static inline char* EscapeBytesToTemplateLiterals(const char* src, size_t len, s
                 }
                 break;
             case '<':
-                if (i + 7 < len &&
-                    src[i + 1] == '/' &&
-                    (src[i + 2] == 's' || src[i + 2] == 'S') &&
-                    (src[i + 3] == 'c' || src[i + 3] == 'C') &&
-                    (src[i + 4] == 'r' || src[i + 4] == 'R') &&
-                    (src[i + 5] == 'i' || src[i + 5] == 'I') &&
-                    (src[i + 6] == 'p' || src[i + 6] == 'P') &&
-                    (src[i + 7] == 't' || src[i + 7] == 'T')) {
+                if (IsCloseScriptTag(src, i, len)) {
                     *dst++ = '<';
                     *dst++ = '\\';
                     *dst++ = '/';
@@ -456,14 +483,7 @@ static inline void EscapeToTemplateLiterals(const CharT* src, size_t len, Parsed
                     }
                     break;
                 case '<':
-                    if (i + 7 < len &&
-                        src[i + 1] == '/' &&
-                        (src[i + 2] == 's' || src[i + 2] == 'S') &&
-                        (src[i + 3] == 'c' || src[i + 3] == 'C') &&
-                        (src[i + 4] == 'r' || src[i + 4] == 'R') &&
-                        (src[i + 5] == 'i' || src[i + 5] == 'I') &&
-                        (src[i + 6] == 'p' || src[i + 6] == 'P') &&
-                        (src[i + 7] == 't' || src[i + 7] == 'T')) {
+                    if (IsCloseScriptTag(src, i, len)) {
                         buf8[out_len++] = '<';
                         buf8[out_len++] = '\\';
                         buf8[out_len++] = '/';
@@ -505,14 +525,7 @@ static inline void EscapeToTemplateLiterals(const CharT* src, size_t len, Parsed
                     }
                     break;
                 case '<':
-                    if (i + 7 < len &&
-                        src[i + 1] == '/' &&
-                        (src[i + 2] == 's' || src[i + 2] == 'S') &&
-                        (src[i + 3] == 'c' || src[i + 3] == 'C') &&
-                        (src[i + 4] == 'r' || src[i + 4] == 'R') &&
-                        (src[i + 5] == 'i' || src[i + 5] == 'I') &&
-                        (src[i + 6] == 'p' || src[i + 6] == 'P') &&
-                        (src[i + 7] == 't' || src[i + 7] == 'T')) {
+                    if (IsCloseScriptTag(src, i, len)) {
                         buf16[out_len++] = u'<';
                         buf16[out_len++] = u'\\';
                         buf16[out_len++] = u'/';
