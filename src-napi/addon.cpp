@@ -304,14 +304,14 @@ static inline char* EscapeBytesToTemplateLiterals(const char* src, size_t len, s
 
         while (i + 16 <= len) {
             __vector unsigned char v = vec_xl(0, reinterpret_cast<const unsigned char*>(src + i));
-            __vector bool char m0  = vec_cmpeq(v, v0);
-            __vector bool char m13 = vec_cmpeq(v, v13);
-            __vector bool char m36 = vec_cmpeq(v, v36);
-            __vector bool char m60 = vec_cmpeq(v, v60);
-            __vector bool char m92 = vec_cmpeq(v, v92);
-            __vector bool char m96 = vec_cmpeq(v, v96);
-            __vector bool char any = vec_or(vec_or(m0, m13),
-                                     vec_or(vec_or(m36, m60), vec_or(m92, m96)));
+            auto m0  = vec_cmpeq(v, v0);
+            auto m13 = vec_cmpeq(v, v13);
+            auto m36 = vec_cmpeq(v, v36);
+            auto m60 = vec_cmpeq(v, v60);
+            auto m92 = vec_cmpeq(v, v92);
+            auto m96 = vec_cmpeq(v, v96);
+            auto any = vec_or(vec_or(m0, m13),
+                             vec_or(vec_or(m36, m60), vec_or(m92, m96)));
             if (vec_any_ne(((__vector unsigned char)any), zero)) {
 #if defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
                 uint64_t lo = vec_extract(((__vector unsigned long long)any), 0);
