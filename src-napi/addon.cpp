@@ -688,13 +688,24 @@ static Napi::Value EncodeResult_ToJSTemplateLiterals(const Napi::CallbackInfo& i
     }
 
     // String path: read uniformly
-    napi_value strVal = self;
-    if (!self.IsString()) {
-        Napi::Value strRes = self.ToObject().Get("toString").As<Napi::Function>().Call(self, {});
+    Napi::String strVal;
+    if (self.IsString()) {
+        strVal = self.As<Napi::String>();
+    } else {
+        if (self.IsUndefined()) {
+            Napi::TypeError::New(env, "Cannot read properties of undefined (reading 'toString')")
+                .ThrowAsJavaScriptException();
+            return env.Null();
+        }
+        if (self.IsNull()) {
+            Napi::TypeError::New(env, "Cannot read properties of null (reading 'toString')")
+                .ThrowAsJavaScriptException();
+            return env.Null();
+        }
+        strVal = self.ToString();
         if (env.IsExceptionPending()) {
             return env.Null();
         }
-        strVal = strRes;
     }
 
     ParsedStringResult res;
@@ -702,7 +713,8 @@ static Napi::Value EncodeResult_ToJSTemplateLiterals(const Napi::CallbackInfo& i
 #ifdef USE_V8_ACCELERATION
     v8::Isolate* isolate = v8::Isolate::GetCurrent();
     if (isolate) {
-        v8::Local<v8::Value> v8_val = *reinterpret_cast<v8::Local<v8::Value>*>(&strVal);
+        napi_value str_handle = strVal;
+        v8::Local<v8::Value> v8_val = *reinterpret_cast<v8::Local<v8::Value>*>(&str_handle);
         if (v8_val->IsString()) {
             v8::Local<v8::String> v8_str = v8_val.As<v8::String>();
             {
@@ -722,7 +734,7 @@ static Napi::Value EncodeResult_ToJSTemplateLiterals(const Napi::CallbackInfo& i
     }
 #endif
 
-    std::u16string input = Napi::Value(env, strVal).As<Napi::String>().Utf16Value();
+    std::u16string input = strVal.Utf16Value();
     EscapeToTemplateLiterals(input.data(), input.length(), res);
     if (res.error) return env.Null();
     if (res.is_one_byte) {
