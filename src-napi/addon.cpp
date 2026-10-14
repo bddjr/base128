@@ -154,11 +154,7 @@ static void DecodeLoop_BMI2(const uint8_t* in, uint8_t* out, size_t full_chunks)
 
 static inline void Encode7to8_SWAR(const uint8_t* src, uint8_t* dst, bool can_read_8) {
     uint64_t in_val = 0;
-    if (can_read_8) {
-        std::memcpy(&in_val, src, 8);
-    } else {
-        std::memcpy(&in_val, src, 7);
-    }
+    std::memcpy(&in_val, src, can_read_8 ? 8 : 7);
     uint64_t x = ToBE64(in_val) >> 8; // 56 bits in low bits
     x = ((x & 0x00FFFFFFF0000000ULL) << 4) | (x & 0x000000000FFFFFFFULL);
     x = ((x & 0x0FFFC0000FFFC000ULL) << 2) | (x & 0x00003FFF00003FFFULL);
@@ -173,11 +169,7 @@ static inline void Decode8to7_SWAR_FromVal(uint64_t v, uint8_t* out, bool can_wr
     x = ((x & 0x3FFF00003FFF0000ULL) >> 2) | (x & 0x00003FFF00003FFFULL);
     uint64_t src_56 = ((x & 0x0FFFFFFF00000000ULL) >> 4) | (x & 0x000000000FFFFFFFULL);
     uint64_t out_val = ToBE64(src_56 << 8);
-    if (can_write_8) {
-        std::memcpy(out, &out_val, 8);
-    } else {
-        std::memcpy(out, &out_val, 7);
-    }
+    std::memcpy(out, &out_val, can_write_8 ? 8 : 7);
 }
 
 static inline void Decode8to7_SWAR(const uint8_t* in, uint8_t* out, bool can_write_8) {
