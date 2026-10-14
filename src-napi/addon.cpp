@@ -1223,7 +1223,7 @@ static Napi::Value Decode(const Napi::CallbackInfo& info) {
             Napi::ArrayBuffer ab = Napi::ArrayBuffer::New(env, out_len);
             if (env.IsExceptionPending() || ab.IsEmpty() || (out_len > 0 && !ab.Data())) return env.Null();
             uint8_t* out = reinterpret_cast<uint8_t*>(ab.Data());
-            v8::Local<v8::String> v8_str = (*reinterpret_cast<v8::Local<v8::Value>*>(&str_val)).As<v8::String>();
+            v8::Local<v8::String> v8_str = v8_val.As<v8::String>();
             {
                 v8::String::ValueView view(isolate, v8_str);
                 if (view.is_one_byte()) {
