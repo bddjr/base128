@@ -356,7 +356,16 @@ struct ParsedStringResult {
     bool oom = false;
 };
 
-template <typename CharT>
+template <typename T>
+concept AnyChar = std::is_same_v<T, char> ||
+                  std::is_same_v<T, uint8_t> ||
+                  std::is_same_v<T, char16_t>;
+
+template <typename T>
+concept UnsignedChar = std::is_same_v<T, uint8_t> ||
+                       std::is_same_v<T, char16_t>;
+
+template <UnsignedChar CharT>
 static inline bool IsTemplateLiteralWhitespace(CharT c) {
     if (c == ' ' || (c >= '\t' && c <= '\r') || static_cast<uint16_t>(c) == 0xA0) {
         return true;
@@ -370,7 +379,7 @@ static inline bool IsTemplateLiteralWhitespace(CharT c) {
     return false;
 }
 
-template <typename CharT>
+template <AnyChar CharT>
 static inline bool IsCloseScriptTag(const CharT* src, size_t i, size_t len) {
     if (i + 7 >= len) return false;
     if constexpr (sizeof(CharT) == 1) {
@@ -752,7 +761,7 @@ static inline char* EscapeBytesToTemplateLiterals(const char* src, size_t len, s
     return out_buf;
 }
 
-template <typename CharT>
+template <UnsignedChar CharT>
 static inline void EscapeToTemplateLiterals(const CharT* src, size_t len, ParsedStringResult& res) {
     if constexpr (sizeof(CharT) == 1) {
         size_t out_len = 0;
@@ -1163,7 +1172,7 @@ static Napi::Value Encode(const Napi::CallbackInfo& info) {
     return addonData->encodeResultConstructor.New({ out_ta });
 }
 
-template <typename CharT>
+template <UnsignedChar CharT>
 static inline void DecodeImpl(const CharT* in, size_t il, uint8_t* out) {
     size_t full_chunks = il / 8;
 
@@ -1247,7 +1256,7 @@ static Napi::Value Decode(const Napi::CallbackInfo& info) {
     return Napi::Uint8Array::New(env, out_len, ab, 0);
 }
 
-template <typename CharT>
+template <AnyChar CharT>
 static inline int HexVal(CharT c) {
     if (c >= '0' && c <= '9') return c - '0';
     c |= 32;
@@ -1256,7 +1265,7 @@ static inline int HexVal(CharT c) {
 }
 
 
-template <typename CharT>
+template <UnsignedChar CharT>
 static void ParseJSTemplateLiteralsImpl(const CharT* input, size_t len, ParsedStringResult& res) {
     res.error = true;
     res.oom = false;
