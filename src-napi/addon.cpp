@@ -167,9 +167,7 @@ static inline void Encode7to8_SWAR(const uint8_t* src, uint8_t* dst, bool can_re
     std::memcpy(dst, &out_val, 8);
 }
 
-static inline void Decode8to7_SWAR(const uint8_t* in, uint8_t* out, bool can_write_8) {
-    uint64_t v;
-    std::memcpy(&v, in, 8);
+static inline void Decode8to7_SWAR_FromVal(uint64_t v, uint8_t* out, bool can_write_8) {
     uint64_t x = ToBE64(v) & 0x7F7F7F7F7F7F7F7FULL;
     x = ((x & 0x7F007F007F007F00ULL) >> 1) | (x & 0x007F007F007F007FULL);
     x = ((x & 0x3FFF00003FFF0000ULL) >> 2) | (x & 0x00003FFF00003FFFULL);
@@ -182,26 +180,40 @@ static inline void Decode8to7_SWAR(const uint8_t* in, uint8_t* out, bool can_wri
     }
 }
 
-static inline void Decode8to7_Char16(const char16_t* in, uint8_t* out, bool can_write_8) {
-    uint8_t c0 = static_cast<uint8_t>(in[0] & 0x7F);
-    uint8_t c1 = static_cast<uint8_t>(in[1] & 0x7F);
-    uint8_t c2 = static_cast<uint8_t>(in[2] & 0x7F);
-    uint8_t c3 = static_cast<uint8_t>(in[3] & 0x7F);
-    uint8_t c4 = static_cast<uint8_t>(in[4] & 0x7F);
-    uint8_t c5 = static_cast<uint8_t>(in[5] & 0x7F);
-    uint8_t c6 = static_cast<uint8_t>(in[6] & 0x7F);
-    uint8_t c7 = static_cast<uint8_t>(in[7] & 0x7F);
-    uint8_t tmp[8] = {
-        static_cast<uint8_t>((c0 << 1) | (c1 >> 6)),
-        static_cast<uint8_t>((c1 << 2) | (c2 >> 5)),
-        static_cast<uint8_t>((c2 << 3) | (c3 >> 4)),
-        static_cast<uint8_t>((c3 << 4) | (c4 >> 3)),
-        static_cast<uint8_t>((c4 << 5) | (c5 >> 2)),
-        static_cast<uint8_t>((c5 << 6) | (c6 >> 1)),
-        static_cast<uint8_t>((c6 << 7) | c7),
-        0
+static inline void Decode8to7_SWAR(const uint8_t* in, uint8_t* out, bool can_write_8) {
+    uint64_t v;
+    std::memcpy(&v, in, 8);
+    Decode8to7_SWAR_FromVal(v, out, can_write_8);
+}
+
+static inline uint64_t Pack8Char16To8Uint8(const char16_t* in) {
+    uint64_t w0, w1;
+    std::memcpy(&w0, in, 8);
+    std::memcpy(&w1, in + 4, 8);
+#if defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
+    auto pack4 = [](uint64_t w) -> uint32_t {
+        w &= 0x007F007F007F007FULL;
+        w = (w | (w << 8)) & 0x7F7F00007F7F0000ULL;
+        return static_cast<uint32_t>((w | (w << 16)) >> 32);
     };
-    std::memcpy(out, tmp, can_write_8 ? 8 : 7);
+    uint32_t p0 = pack4(w0);
+    uint32_t p1 = pack4(w1);
+    return (static_cast<uint64_t>(p0) << 32) | p1;
+#else
+    auto pack4 = [](uint64_t w) -> uint32_t {
+        w &= 0x007F007F007F007FULL;
+        w = (w | (w >> 8)) & 0x00007F7F00007F7FULL;
+        return static_cast<uint32_t>(w | (w >> 16));
+    };
+    uint32_t p0 = pack4(w0);
+    uint32_t p1 = pack4(w1);
+    return (static_cast<uint64_t>(p1) << 32) | p0;
+#endif
+}
+
+static inline void Decode8to7_Char16(const char16_t* in, uint8_t* out, bool can_write_8) {
+    uint64_t v = Pack8Char16To8Uint8(in);
+    Decode8to7_SWAR_FromVal(v, out, can_write_8);
 }
 
 static void EncodeLoop_SWAR(const uint8_t* src, uint8_t* dst, size_t full_chunks) {
