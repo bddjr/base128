@@ -1,3 +1,5 @@
+// base128-ascii (The Unlicense)
+
 #ifndef NAPI_VERSION
 #define NAPI_VERSION 10
 #endif

@@ -1,4 +1,9 @@
+// base128-ascii (The Unlicense)
+
 export class EncodeResult {
+    /**
+     * @param {Uint8Array<ArrayBuffer>} bytes
+     */
     constructor(bytes) {
         this.bytes = bytes
     }
@@ -169,6 +174,9 @@ export function parseJSTemplateLiterals(input) {
     const re = /[\\`$\r]/g
     re.lastIndex = i
 
+    /**
+     * @param {number} endIndex
+     */
     function hexVal(endIndex) {
         if (endIndex > end) throw SyntaxError(err);
         var val = 0
