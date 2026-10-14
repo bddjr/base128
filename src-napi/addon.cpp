@@ -160,7 +160,7 @@ static inline void Encode7to8_SWAR(const uint8_t* src, uint8_t* dst, bool can_re
         std::memcpy(&in_val, src, 7);
     }
     uint64_t x = ToBE64(in_val) >> 8; // 56 bits in low bits
-    x = ((x & 0x0FFFFFFF0000000ULL) << 4) | (x & 0x000000000FFFFFFFULL);
+    x = ((x & 0x00FFFFFFF0000000ULL) << 4) | (x & 0x000000000FFFFFFFULL);
     x = ((x & 0x0FFFC0000FFFC000ULL) << 2) | (x & 0x00003FFF00003FFFULL);
     x = ((x & 0x3F803F803F803F80ULL) << 1) | (x & 0x007F007F007F007FULL);
     uint64_t out_val = ToBE64(x);
@@ -1797,7 +1797,9 @@ static bool SafeCallTestV8(v8::Isolate* isolate, napi_value str) {
 
 static bool SafeTestV8(napi_env env) {
 #if !defined(_MSC_VER)
-    if (!dlsym(RTLD_DEFAULT, "_ZN2v87Isolate10GetCurrentEv")) {
+    if (!dlsym(RTLD_DEFAULT, "_ZN2v87Isolate10GetCurrentEv") ||
+        (!dlsym(RTLD_DEFAULT, "_ZN2v86String9ValueViewC1EPNS_7IsolateENS_5LocalIS0_EE") &&
+         !dlsym(RTLD_DEFAULT, "_ZN2v86String9ValueViewC2EPNS_7IsolateENS_5LocalIS0_EE"))) {
         return false;
     }
 #endif
