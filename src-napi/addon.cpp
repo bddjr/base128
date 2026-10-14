@@ -367,7 +367,7 @@ concept UnsignedChar = std::is_same_v<T, uint8_t> ||
 
 template <UnsignedChar CharT>
 static inline bool IsTemplateLiteralWhitespace(CharT c) {
-    if (c == ' ' || (c >= '\t' && c <= '\r') || static_cast<uint16_t>(c) == 0xA0) {
+    if (c == ' ' || (c >= '\t' && c <= '\r') || c == 0xA0) {
         return true;
     }
     if constexpr (sizeof(CharT) > 1) {
