@@ -139,6 +139,9 @@ export function decode(input) {
     return out
 }
 
+/**
+ * @param {number} c
+ */
 function isTemplateLiteralWhitespace(c) {
     return c === 32 || (c >= 9 && c <= 13) || c === 160 || c === 65279 ||
         c === 8232 || c === 8233 || c === 0x1680 || (c >= 0x2000 && c <= 0x200A) ||
