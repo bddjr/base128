@@ -10,11 +10,10 @@
 #endif
 #include <array>
 #include <string>
-#include <vector>
-#include <algorithm>
+#include <cstring>
 #include <cstdint>
 #include <cstdlib>
-#include <cctype>
+#include <type_traits>
 
 struct AddonData {
     Napi::FunctionReference encodeResultConstructor;
@@ -101,7 +100,8 @@ static inline bool CpuHasFastBMI2() {
 #else
             __cpuid(1, ver_info[0], ver_info[1], ver_info[2], ver_info[3]);
 #endif
-            int family = ((ver_info[0] >> 8) & 0xF) + ((ver_info[0] >> 20) & 0xFF);
+            int base = (ver_info[0] >> 8) & 0xF;
+            int family = (base == 0xF) ? (base + ((ver_info[0] >> 20) & 0xFF)) : base;
             if (family < 0x19) return false; // Zen 1 and Zen 2 have slow microcoded PDEP/PEXT
         }
         return true;
@@ -183,20 +183,25 @@ static inline void Decode8to7_SWAR(const uint8_t* in, uint8_t* out, bool can_wri
 }
 
 static inline void Decode8to7_Char16(const char16_t* in, uint8_t* out, bool can_write_8) {
-    uint8_t tmp[8];
-    tmp[0] = static_cast<uint8_t>((in[0] << 1) | (in[1] >> 6));
-    tmp[1] = static_cast<uint8_t>((in[1] << 2) | (in[2] >> 5));
-    tmp[2] = static_cast<uint8_t>((in[2] << 3) | (in[3] >> 4));
-    tmp[3] = static_cast<uint8_t>((in[3] << 4) | (in[4] >> 3));
-    tmp[4] = static_cast<uint8_t>((in[4] << 5) | (in[5] >> 2));
-    tmp[5] = static_cast<uint8_t>((in[5] << 6) | (in[6] >> 1));
-    tmp[6] = static_cast<uint8_t>((in[6] << 7) | in[7]);
-    tmp[7] = 0;
-    if (can_write_8) {
-        std::memcpy(out, tmp, 8);
-    } else {
-        std::memcpy(out, tmp, 7);
-    }
+    uint8_t c0 = static_cast<uint8_t>(in[0] & 0x7F);
+    uint8_t c1 = static_cast<uint8_t>(in[1] & 0x7F);
+    uint8_t c2 = static_cast<uint8_t>(in[2] & 0x7F);
+    uint8_t c3 = static_cast<uint8_t>(in[3] & 0x7F);
+    uint8_t c4 = static_cast<uint8_t>(in[4] & 0x7F);
+    uint8_t c5 = static_cast<uint8_t>(in[5] & 0x7F);
+    uint8_t c6 = static_cast<uint8_t>(in[6] & 0x7F);
+    uint8_t c7 = static_cast<uint8_t>(in[7] & 0x7F);
+    uint8_t tmp[8] = {
+        static_cast<uint8_t>((c0 << 1) | (c1 >> 6)),
+        static_cast<uint8_t>((c1 << 2) | (c2 >> 5)),
+        static_cast<uint8_t>((c2 << 3) | (c3 >> 4)),
+        static_cast<uint8_t>((c3 << 4) | (c4 >> 3)),
+        static_cast<uint8_t>((c4 << 5) | (c5 >> 2)),
+        static_cast<uint8_t>((c5 << 6) | (c6 >> 1)),
+        static_cast<uint8_t>((c6 << 7) | c7),
+        0
+    };
+    std::memcpy(out, tmp, can_write_8 ? 8 : 7);
 }
 
 static void EncodeLoop_SWAR(const uint8_t* src, uint8_t* dst, size_t full_chunks) {
@@ -357,7 +362,8 @@ static inline bool IsTemplateLiteralWhitespace(CharT c) {
         return true;
     }
     if constexpr (sizeof(CharT) > 1) {
-        if (c == 0xFEFF || c == 0x2028 || c == 0x2029) {
+        if (c == 0xFEFF || c == 0x2028 || c == 0x2029 || c == 0x1680 ||
+            (c >= 0x2000 && c <= 0x200A) || c == 0x202F || c == 0x205F || c == 0x3000) {
             return true;
         }
     }
@@ -1001,8 +1007,8 @@ static Napi::Value EncodeResult_ToString(const Napi::CallbackInfo& info) {
     Napi::Object obj = self.As<Napi::Object>();
     Napi::Value bytesVal = obj.Get("bytes");
     if (env.IsExceptionPending()) return env.Null();
-    if (!bytesVal.IsTypedArray()) {
-        Napi::TypeError::New(env, "EncodeResult.prototype.toString: 'this.bytes' must be a TypedArray")
+    if (!IsUint8Array(bytesVal)) {
+        Napi::TypeError::New(env, "EncodeResult.prototype.toString: 'this.bytes' must be a Uint8Array or Uint8ClampedArray")
             .ThrowAsJavaScriptException();
         return env.Null();
     }
@@ -1025,7 +1031,7 @@ static Napi::Value EncodeResult_ToJSTemplateLiterals(const Napi::CallbackInfo& i
     if (self.IsObject()) {
         Napi::Value bytesVal = self.As<Napi::Object>().Get("bytes");
         if (env.IsExceptionPending()) return env.Null();
-        if (bytesVal.IsTypedArray()) {
+        if (IsUint8Array(bytesVal)) {
             // Read this.bytes directly to accelerate string construction (guaranteed ASCII Base128)
             void* data_ptr = nullptr;
             size_t len = 0;
@@ -1211,12 +1217,13 @@ static Napi::Value Decode(const Napi::CallbackInfo& info) {
         napi_value str_val = info[0];
         v8::Local<v8::Value> v8_val = *reinterpret_cast<v8::Local<v8::Value>*>(&str_val);
         if (v8_val->IsString()) {
-            v8::Local<v8::String> v8_str = v8_val.As<v8::String>();
-            size_t il = v8_str->Length();
+            size_t il = 0;
+            napi_get_value_string_utf16(env, str_val, nullptr, 0, &il);
             size_t out_len = (il / 8) * 7 + ((il & 7) * 7) / 8;
             Napi::ArrayBuffer ab = Napi::ArrayBuffer::New(env, out_len);
             if (env.IsExceptionPending() || ab.IsEmpty() || (out_len > 0 && !ab.Data())) return env.Null();
             uint8_t* out = reinterpret_cast<uint8_t*>(ab.Data());
+            v8::Local<v8::String> v8_str = (*reinterpret_cast<v8::Local<v8::Value>*>(&str_val)).As<v8::String>();
             {
                 v8::String::ValueView view(isolate, v8_str);
                 if (view.is_one_byte()) {

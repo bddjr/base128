@@ -139,6 +139,12 @@ export function decode(input) {
     return out
 }
 
+function isTemplateLiteralWhitespace(c) {
+    return c === 32 || (c >= 9 && c <= 13) || c === 160 || c === 65279 ||
+        c === 8232 || c === 8233 || c === 0x1680 || (c >= 0x2000 && c <= 0x200A) ||
+        c === 0x202F || c === 0x205F || c === 0x3000;
+}
+
 /**
  * @param {string} input
  */
@@ -158,14 +164,14 @@ export function parseJSTemplateLiterals(input) {
         const c = input.charCodeAt(start)
         // '`'
         if (c === 96) break
-        if (c !== 32 && (c < 9 || c > 13) && c !== 160 && c !== 65279 && c !== 8232 && c !== 8233) throw SyntaxError(err)
+        if (!isTemplateLiteralWhitespace(c)) throw SyntaxError(err)
     }
     for (; ; end--) {
         if (end === start) throw SyntaxError(err);
         const c = input.charCodeAt(end)
         // '`'
         if (c === 96) break
-        if (c !== 32 && (c < 9 || c > 13) && c !== 160 && c !== 65279 && c !== 8232 && c !== 8233) throw SyntaxError(err)
+        if (!isTemplateLiteralWhitespace(c)) throw SyntaxError(err)
     }
 
     var m

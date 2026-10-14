@@ -274,9 +274,33 @@ for (const impl of [base128, browserBase128, extraBase128].filter(Boolean)) {
             }
         }
     }
+
+    // Verify whitespace (Space_Separator) support outside backticks
+    for (const ws of ['\u3000', '\u1680', '\u2000', '\u202F', '\u205F']) {
+        const input = `${ws}\`test\`${ws}`;
+        const actual = impl.parseJSTemplateLiterals(input);
+        if (actual !== 'test') {
+            allSuccess = false;
+            throw new Error(`[${impl._impl}] Space_Separator test failed for ${JSON.stringify(input)}`);
+        }
+    }
 }
 
-// base128.encode(class { static buffer = new ArrayBuffer })
+// Verify EncodeResult.prototype.toString/toJSTemplateLiterals reject non-Uint8Array
+{
+    const res = base128.encode(new Uint8Array([1, 2, 3]));
+    res.bytes = new Uint32Array([1, 2, 3]);
+    let threw = false;
+    try {
+        res.toString();
+    } catch (e) {
+        threw = e instanceof TypeError;
+    }
+    if (!threw) {
+        allSuccess = false;
+        throw new Error("Expected TypeError for non-Uint8Array this.bytes in toString");
+    }
+}
 
 console.log('allSuccess:', allSuccess)
 console.log()
