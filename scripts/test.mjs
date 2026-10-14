@@ -244,6 +244,12 @@ for (const impl of [base128, browserBase128, extraBase128].filter(Boolean)) {
         ['`\\u{000010ffff}`', '\u{10ffff}'],
         ['`a\\\u2028b`', 'ab'],
         ['`a\\\u2029b`', 'ab'],
+        ['\u2028`hello`\u2029', 'hello'],
+        ['\u2028`hello`', 'hello'],
+        ['`hello`\u2029', 'hello'],
+        ['`foo$bar`', 'foo$bar'],
+        ['`foo<script`', 'foo<script'],
+        ['`foo<bar`', 'foo<bar'],
     ];
     for (const [input, expected] of specTests) {
         const actual = impl.parseJSTemplateLiterals(input);

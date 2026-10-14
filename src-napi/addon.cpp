@@ -42,6 +42,9 @@ static constexpr auto kIsSpecialChar = []() constexpr {
 #endif
 #if defined(__x86_64__) || defined(_M_X64)
 #include <immintrin.h>
+#if !defined(_MSC_VER)
+#include <cpuid.h>
+#endif
 #elif defined(__aarch64__) || defined(_M_ARM64)
 #include <arm_neon.h>
 #elif (defined(__PPC64__) || defined(__ppc64__) || defined(_ARCH_PPC64)) && defined(__ALTIVEC__)
@@ -50,6 +53,130 @@ static constexpr auto kIsSpecialChar = []() constexpr {
 #undef vector
 #undef pixel
 #endif
+
+static inline uint64_t BSwap64(uint64_t v) {
+#if defined(_MSC_VER)
+    return _byteswap_uint64(v);
+#else
+    return __builtin_bswap64(v);
+#endif
+}
+
+#if defined(__x86_64__) || defined(_M_X64)
+static inline bool CpuHasFastBMI2() {
+    static const bool has_fast_bmi2 = []() {
+        int cpu_info[4] = {0};
+#if defined(_MSC_VER)
+        __cpuid(cpu_info, 0);
+#else
+        __cpuid(0, cpu_info[0], cpu_info[1], cpu_info[2], cpu_info[3]);
+#endif
+        int max_ids = cpu_info[0];
+        if (max_ids < 7) return false;
+
+        bool is_amd = (cpu_info[1] == 0x68747541 && cpu_info[3] == 0x69746e65 && cpu_info[2] == 0x444d4163); // "AuthenticAMD"
+
+#if defined(_MSC_VER)
+        __cpuidex(cpu_info, 7, 0);
+#else
+        __cpuid_count(7, 0, cpu_info[0], cpu_info[1], cpu_info[2], cpu_info[3]);
+#endif
+        bool bmi2 = (cpu_info[1] & (1 << 8)) != 0;
+        if (!bmi2) return false;
+
+        if (is_amd) {
+            int ver_info[4] = {0};
+#if defined(_MSC_VER)
+            __cpuid(ver_info, 1);
+#else
+            __cpuid(1, ver_info[0], ver_info[1], ver_info[2], ver_info[3]);
+#endif
+            int family = ((ver_info[0] >> 8) & 0xF) + ((ver_info[0] >> 20) & 0xFF);
+            if (family < 0x19) return false; // Zen 1 and Zen 2 have slow microcoded PDEP/PEXT
+        }
+        return true;
+    }();
+    return has_fast_bmi2;
+}
+
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((target("bmi2")))
+#endif
+static inline void Encode7to8_BMI2(const uint8_t* src, uint8_t* dst) {
+    uint64_t in_val = 0;
+    std::memcpy(&in_val, src, 7);
+    uint64_t src_56 = BSwap64(in_val) >> 8;
+    uint64_t out_val = BSwap64(_pdep_u64(src_56, 0x7F7F7F7F7F7F7F7FULL));
+    std::memcpy(dst, &out_val, 8);
+}
+
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((target("bmi2")))
+#endif
+static inline void Decode8to7_BMI2(const uint8_t* in, uint8_t* out) {
+    uint64_t v;
+    std::memcpy(&v, in, 8);
+    uint64_t src_56 = _pext_u64(BSwap64(v), 0x7F7F7F7F7F7F7F7FULL);
+    uint64_t out_val = BSwap64(src_56 << 8);
+    std::memcpy(out, &out_val, 7);
+}
+#endif
+
+static inline void Encode7to8_SWAR(const uint8_t* src, uint8_t* dst) {
+    uint64_t s0 = src[0], s1 = src[1], s2 = src[2], s3 = src[3];
+    uint64_t s4 = src[4], s5 = src[5], s6 = src[6];
+
+    uint64_t d0 = s0 >> 1;
+    uint64_t d1 = 127 & ((s0 << 6) | (s1 >> 2));
+    uint64_t d2 = 127 & ((s1 << 5) | (s2 >> 3));
+    uint64_t d3 = 127 & ((s2 << 4) | (s3 >> 4));
+    uint64_t d4 = 127 & ((s3 << 3) | (s4 >> 5));
+    uint64_t d5 = 127 & ((s4 << 2) | (s5 >> 6));
+    uint64_t d6 = 127 & ((s5 << 1) | (s6 >> 7));
+    uint64_t d7 = 127 & s6;
+
+    uint64_t out_val = d0 | (d1 << 8) | (d2 << 16) | (d3 << 24)
+                     | (d4 << 32) | (d5 << 40) | (d6 << 48) | (d7 << 56);
+    std::memcpy(dst, &out_val, 8);
+}
+
+static inline void Decode8to7_SWAR(const uint8_t* in, uint8_t* out) {
+    uint64_t v;
+    std::memcpy(&v, in, 8);
+    uint64_t s0 = v & 0xFF;
+    uint64_t s1 = (v >> 8) & 0xFF;
+    uint64_t s2 = (v >> 16) & 0xFF;
+    uint64_t s3 = (v >> 24) & 0xFF;
+    uint64_t s4 = (v >> 32) & 0xFF;
+    uint64_t s5 = (v >> 40) & 0xFF;
+    uint64_t s6 = (v >> 48) & 0xFF;
+    uint64_t s7 = (v >> 56) & 0xFF;
+
+    uint64_t d0 = (s0 << 1) | (s1 >> 6);
+    uint64_t d1 = (s1 << 2) | (s2 >> 5);
+    uint64_t d2 = (s2 << 3) | (s3 >> 4);
+    uint64_t d3 = (s3 << 4) | (s4 >> 3);
+    uint64_t d4 = (s4 << 5) | (s5 >> 2);
+    uint64_t d5 = (s5 << 6) | (s6 >> 1);
+    uint64_t d6 = (s6 << 7) | s7;
+
+    uint64_t out_val = (d0 & 0xFF) | ((d1 & 0xFF) << 8) | ((d2 & 0xFF) << 16) | ((d3 & 0xFF) << 24)
+                     | ((d4 & 0xFF) << 32) | ((d5 & 0xFF) << 40) | ((d6 & 0xFF) << 48);
+    std::memcpy(out, &out_val, 7);
+}
+
+static inline void Decode8to7_Char16(const char16_t* in, uint8_t* out) {
+    uint64_t d0 = static_cast<uint8_t>((in[0] << 1) | (in[1] >> 6));
+    uint64_t d1 = static_cast<uint8_t>((in[1] << 2) | (in[2] >> 5));
+    uint64_t d2 = static_cast<uint8_t>((in[2] << 3) | (in[3] >> 4));
+    uint64_t d3 = static_cast<uint8_t>((in[3] << 4) | (in[4] >> 3));
+    uint64_t d4 = static_cast<uint8_t>((in[4] << 5) | (in[5] >> 2));
+    uint64_t d5 = static_cast<uint8_t>((in[5] << 6) | (in[6] >> 1));
+    uint64_t d6 = static_cast<uint8_t>((in[6] << 7) | in[7]);
+    uint64_t out_val = (d0 & 0xFF) | ((d1 & 0xFF) << 8) | ((d2 & 0xFF) << 16) | ((d3 & 0xFF) << 24)
+                     | ((d4 & 0xFF) << 32) | ((d5 & 0xFF) << 40) | ((d6 & 0xFF) << 48);
+    std::memcpy(out, &out_val, 7);
+}
 
 static inline void Widen8To16(const uint8_t* src, char16_t* dst, size_t len) {
 #if defined(__x86_64__) || defined(_M_X64)
@@ -180,7 +307,21 @@ struct ParsedStringResult {
     size_t len = 0;
     bool is_one_byte = true;
     bool error = false;
+    bool oom = false;
 };
+
+template <typename CharT>
+static inline bool IsTemplateLiteralWhitespace(CharT c) {
+    if (c == ' ' || (c >= '\t' && c <= '\r') || static_cast<uint16_t>(c) == 0xA0) {
+        return true;
+    }
+    if constexpr (sizeof(CharT) > 1) {
+        if (c == 0xFEFF || c == 0x2028 || c == 0x2029) {
+            return true;
+        }
+    }
+    return false;
+}
 
 template <typename CharT>
 static inline bool IsCloseScriptTag(const CharT* src, size_t i, size_t len) {
@@ -248,14 +389,36 @@ static inline char* EscapeBytesToTemplateLiterals(const char* src, size_t len, s
                           _mm_or_si128(_mm_or_si128(m36, m60), _mm_or_si128(m92, m96)));
             int mask = _mm_movemask_epi8(any);
             if (mask != 0) {
+                bool found_escape = false;
+                while (mask != 0) {
 #if defined(_MSC_VER)
-                unsigned long offset;
-                _BitScanForward(&offset, mask);
-                i += offset;
+                    unsigned long offset;
+                    _BitScanForward(&offset, mask);
 #else
-                i += __builtin_ctz(mask);
+                    unsigned long offset = __builtin_ctz(mask);
 #endif
-                break;
+                    size_t pos = i + offset;
+                    char c = src[pos];
+                    if (c == '$') {
+                        if (pos + 1 < len && src[pos + 1] == '{') {
+                            i = pos;
+                            found_escape = true;
+                            break;
+                        }
+                    } else if (c == '<') {
+                        if (IsCloseScriptTag(src, pos, len)) {
+                            i = pos;
+                            found_escape = true;
+                            break;
+                        }
+                    } else {
+                        i = pos;
+                        found_escape = true;
+                        break;
+                    }
+                    mask &= mask - 1;
+                }
+                if (found_escape) break;
             }
             i += 16;
         }
@@ -280,24 +443,66 @@ static inline char* EscapeBytesToTemplateLiterals(const char* src, size_t len, s
             uint64_t lo = vgetq_lane_u64(vreinterpretq_u64_u8(any), 0);
             uint64_t hi = vgetq_lane_u64(vreinterpretq_u64_u8(any), 1);
             if ((lo | hi) != 0) {
-                if (lo != 0) {
+                bool found_escape = false;
+                while (lo != 0) {
 #if defined(_MSC_VER)
                     unsigned long offset;
                     _BitScanForward64(&offset, lo);
-                    i += (offset >> 3);
 #else
-                    i += (__builtin_ctzll(lo) >> 3);
+                    unsigned long offset = __builtin_ctzll(lo);
 #endif
-                } else {
+                    size_t pos = i + (offset >> 3);
+                    char c = src[pos];
+                    if (c == '$') {
+                        if (pos + 1 < len && src[pos + 1] == '{') {
+                            i = pos;
+                            found_escape = true;
+                            break;
+                        }
+                    } else if (c == '<') {
+                        if (IsCloseScriptTag(src, pos, len)) {
+                            i = pos;
+                            found_escape = true;
+                            break;
+                        }
+                    } else {
+                        i = pos;
+                        found_escape = true;
+                        break;
+                    }
+                    lo &= ~(0xFFULL << (offset & ~7ULL));
+                }
+                if (found_escape) break;
+
+                while (hi != 0) {
 #if defined(_MSC_VER)
                     unsigned long offset;
                     _BitScanForward64(&offset, hi);
-                    i += 8 + (offset >> 3);
 #else
-                    i += 8 + (__builtin_ctzll(hi) >> 3);
+                    unsigned long offset = __builtin_ctzll(hi);
 #endif
+                    size_t pos = i + 8 + (offset >> 3);
+                    char c = src[pos];
+                    if (c == '$') {
+                        if (pos + 1 < len && src[pos + 1] == '{') {
+                            i = pos;
+                            found_escape = true;
+                            break;
+                        }
+                    } else if (c == '<') {
+                        if (IsCloseScriptTag(src, pos, len)) {
+                            i = pos;
+                            found_escape = true;
+                            break;
+                        }
+                    } else {
+                        i = pos;
+                        found_escape = true;
+                        break;
+                    }
+                    hi &= ~(0xFFULL << (offset & ~7ULL));
                 }
-                break;
+                if (found_escape) break;
             }
             i += 16;
         }
@@ -321,24 +526,88 @@ static inline char* EscapeBytesToTemplateLiterals(const char* src, size_t len, s
             auto any = vec_or(vec_or(m0, m13),
                              vec_or(vec_or(m36, m60), vec_or(m92, m96)));
             if (vec_any_ne(((__vector unsigned char)any), zero)) {
+                bool found_escape = false;
 #if defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
                 uint64_t lo = vec_extract(((__vector unsigned long long)any), 0);
                 uint64_t hi = vec_extract(((__vector unsigned long long)any), 1);
-                if (lo != 0) {
-                    i += (__builtin_ctzll(lo) >> 3);
-                } else {
-                    i += 8 + (__builtin_ctzll(hi) >> 3);
+                while (lo != 0) {
+                    unsigned long offset = __builtin_ctzll(lo);
+                    size_t pos = i + (offset >> 3);
+                    char c = src[pos];
+                    if (c == '$') {
+                        if (pos + 1 < len && src[pos + 1] == '{') {
+                            i = pos; found_escape = true; break;
+                        }
+                    } else if (c == '<') {
+                        if (IsCloseScriptTag(src, pos, len)) {
+                            i = pos; found_escape = true; break;
+                        }
+                    } else {
+                        i = pos; found_escape = true; break;
+                    }
+                    lo &= ~(0xFFULL << (offset & ~7ULL));
                 }
+                if (found_escape) break;
+
+                while (hi != 0) {
+                    unsigned long offset = __builtin_ctzll(hi);
+                    size_t pos = i + 8 + (offset >> 3);
+                    char c = src[pos];
+                    if (c == '$') {
+                        if (pos + 1 < len && src[pos + 1] == '{') {
+                            i = pos; found_escape = true; break;
+                        }
+                    } else if (c == '<') {
+                        if (IsCloseScriptTag(src, pos, len)) {
+                            i = pos; found_escape = true; break;
+                        }
+                    } else {
+                        i = pos; found_escape = true; break;
+                    }
+                    hi &= ~(0xFFULL << (offset & ~7ULL));
+                }
+                if (found_escape) break;
 #else
                 uint64_t hi = vec_extract(((__vector unsigned long long)any), 0);
                 uint64_t lo = vec_extract(((__vector unsigned long long)any), 1);
-                if (hi != 0) {
-                    i += (__builtin_clzll(hi) >> 3);
-                } else {
-                    i += 8 + (__builtin_clzll(lo) >> 3);
+                while (hi != 0) {
+                    unsigned long offset = __builtin_clzll(hi);
+                    size_t pos = i + (offset >> 3);
+                    char c = src[pos];
+                    if (c == '$') {
+                        if (pos + 1 < len && src[pos + 1] == '{') {
+                            i = pos; found_escape = true; break;
+                        }
+                    } else if (c == '<') {
+                        if (IsCloseScriptTag(src, pos, len)) {
+                            i = pos; found_escape = true; break;
+                        }
+                    } else {
+                        i = pos; found_escape = true; break;
+                    }
+                    hi &= ~(0xFF00000000000000ULL >> (offset & ~7ULL));
                 }
+                if (found_escape) break;
+
+                while (lo != 0) {
+                    unsigned long offset = __builtin_clzll(lo);
+                    size_t pos = i + 8 + (offset >> 3);
+                    char c = src[pos];
+                    if (c == '$') {
+                        if (pos + 1 < len && src[pos + 1] == '{') {
+                            i = pos; found_escape = true; break;
+                        }
+                    } else if (c == '<') {
+                        if (IsCloseScriptTag(src, pos, len)) {
+                            i = pos; found_escape = true; break;
+                        }
+                    } else {
+                        i = pos; found_escape = true; break;
+                    }
+                    lo &= ~(0xFF00000000000000ULL >> (offset & ~7ULL));
+                }
+                if (found_escape) break;
 #endif
-                break;
             }
             i += 16;
         }
@@ -346,7 +615,15 @@ static inline char* EscapeBytesToTemplateLiterals(const char* src, size_t len, s
 
         while (i < len) {
             char c = src[i];
-            if (kIsSpecialChar[static_cast<uint8_t>(c)]) break;
+            if (kIsSpecialChar[static_cast<uint8_t>(c)]) {
+                if (c == '$') {
+                    if (i + 1 < len && src[i + 1] == '{') break;
+                } else if (c == '<') {
+                    if (IsCloseScriptTag(src, i, len)) break;
+                } else {
+                    break;
+                }
+            }
             i++;
         }
 
@@ -437,17 +714,22 @@ static inline void EscapeToTemplateLiterals(const CharT* src, size_t len, Parsed
         res.len = out_len;
         res.is_one_byte = true;
         res.error = (out_buf == nullptr);
+        res.oom = (out_buf == nullptr);
         return;
     }
 
     res.error = true;
+    res.oom = false;
     res.buf = nullptr;
     res.len = 0;
     res.is_one_byte = true;
 
     size_t cap = len + (len / 4) + 128;
     char* buf8 = static_cast<char*>(std::malloc(cap));
-    if (!buf8) return;
+    if (!buf8) {
+        res.oom = true;
+        return;
+    }
 
     char16_t* buf16 = nullptr;
     bool is_one_byte = true;
@@ -456,6 +738,7 @@ static inline void EscapeToTemplateLiterals(const CharT* src, size_t len, Parsed
     auto switchToTwoByte = [&]() -> bool {
         buf16 = static_cast<char16_t*>(std::malloc(cap * sizeof(char16_t)));
         if (!buf16) {
+            res.oom = true;
             std::free(buf8);
             buf8 = nullptr;
             return false;
@@ -473,6 +756,7 @@ static inline void EscapeToTemplateLiterals(const CharT* src, size_t len, Parsed
             if (is_one_byte) {
                 char* nb = static_cast<char*>(std::realloc(buf8, cap));
                 if (!nb) {
+                    res.oom = true;
                     std::free(buf8);
                     buf8 = nullptr;
                     return false;
@@ -481,6 +765,7 @@ static inline void EscapeToTemplateLiterals(const CharT* src, size_t len, Parsed
             } else {
                 char16_t* nb = static_cast<char16_t*>(std::realloc(buf16, cap * sizeof(char16_t)));
                 if (!nb) {
+                    res.oom = true;
                     std::free(buf16);
                     buf16 = nullptr;
                     return false;
@@ -499,9 +784,25 @@ static inline void EscapeToTemplateLiterals(const CharT* src, size_t len, Parsed
             CharT c = src[i];
             if (is_one_byte) {
                 if (static_cast<uint16_t>(c) > 255) break;
-                if (kIsSpecialChar[static_cast<uint8_t>(c)]) break;
+                if (kIsSpecialChar[static_cast<uint8_t>(c)]) {
+                    if (c == '$') {
+                        if (i + 1 < len && src[i + 1] == '{') break;
+                    } else if (c == '<') {
+                        if (IsCloseScriptTag(src, i, len)) break;
+                    } else {
+                        break;
+                    }
+                }
             } else {
-                if (c <= 255 && kIsSpecialChar[static_cast<uint8_t>(c)]) break;
+                if (c <= 255 && kIsSpecialChar[static_cast<uint8_t>(c)]) {
+                    if (c == '$') {
+                        if (i + 1 < len && src[i + 1] == '{') break;
+                    } else if (c == '<') {
+                        if (IsCloseScriptTag(src, i, len)) break;
+                    } else {
+                        break;
+                    }
+                }
             }
             i++;
         }
@@ -658,6 +959,7 @@ static Napi::Value EncodeResult_ToString(const Napi::CallbackInfo& info) {
     }
     Napi::Object obj = self.As<Napi::Object>();
     Napi::Value bytesVal = obj.Get("bytes");
+    if (env.IsExceptionPending()) return env.Null();
     if (!bytesVal.IsTypedArray()) {
         Napi::TypeError::New(env, "EncodeResult.prototype.toString: 'this.bytes' must be a TypedArray")
             .ThrowAsJavaScriptException();
@@ -681,6 +983,7 @@ static Napi::Value EncodeResult_ToJSTemplateLiterals(const Napi::CallbackInfo& i
 
     if (self.IsObject()) {
         Napi::Value bytesVal = self.As<Napi::Object>().Get("bytes");
+        if (env.IsExceptionPending()) return env.Null();
         if (bytesVal.IsTypedArray()) {
             // Read this.bytes directly to accelerate string construction (guaranteed ASCII Base128)
             void* data_ptr = nullptr;
@@ -691,7 +994,10 @@ static Napi::Value EncodeResult_ToJSTemplateLiterals(const Napi::CallbackInfo& i
                 const char* data = static_cast<const char*>(data_ptr ? data_ptr : "");
                 size_t out_len = 0;
                 char* out_buf = EscapeBytesToTemplateLiterals(data, len, &out_len);
-                if (!out_buf) return env.Null();
+                if (!out_buf) {
+                    Napi::Error::New(env, "Out of memory").ThrowAsJavaScriptException();
+                    return env.Null();
+                }
                 return MakeLatin1String(env, out_buf, out_len);
             }
         }
@@ -735,6 +1041,10 @@ static Napi::Value EncodeResult_ToJSTemplateLiterals(const Napi::CallbackInfo& i
                     EscapeToTemplateLiterals(reinterpret_cast<const char16_t*>(view.data16()), view.length(), res);
                 }
             }
+            if (res.oom) {
+                Napi::Error::New(env, "Out of memory").ThrowAsJavaScriptException();
+                return env.Null();
+            }
             if (res.error) return env.Null();
             if (res.is_one_byte) {
                 return MakeLatin1String(env, static_cast<char*>(res.buf), res.len);
@@ -746,6 +1056,10 @@ static Napi::Value EncodeResult_ToJSTemplateLiterals(const Napi::CallbackInfo& i
 
     std::u16string input = strVal.Utf16Value();
     EscapeToTemplateLiterals(input.data(), input.length(), res);
+    if (res.oom) {
+        Napi::Error::New(env, "Out of memory").ThrowAsJavaScriptException();
+        return env.Null();
+    }
     if (res.error) return env.Null();
     if (res.is_one_byte) {
         return MakeLatin1String(env, static_cast<char*>(res.buf), res.len);
@@ -772,52 +1086,58 @@ static Napi::Value Encode(const Napi::CallbackInfo& info) {
     }
 
     Napi::ArrayBuffer ab = Napi::ArrayBuffer::New(env, out_len);
+    if (env.IsExceptionPending() || ab.IsEmpty() || (out_len > 0 && !ab.Data())) return env.Null();
     uint8_t* out = reinterpret_cast<uint8_t*>(ab.Data());
 
-    auto encode_7to8 = [](const uint8_t* src, uint8_t* dst) {
-        dst[0] = src[0] >> 1;
-        dst[1] = 127 & ((src[0] << 6) | (src[1] >> 2));
-        dst[2] = 127 & ((src[1] << 5) | (src[2] >> 3));
-        dst[3] = 127 & ((src[2] << 4) | (src[3] >> 4));
-        dst[4] = 127 & ((src[3] << 3) | (src[4] >> 5));
-        dst[5] = 127 & ((src[4] << 2) | (src[5] >> 6));
-        dst[6] = 127 & ((src[5] << 1) | (src[6] >> 7));
-        dst[7] = 127 & src[6];
-    };
-
     size_t full_chunks = il / 7;
-    for (size_t c = 0; c < full_chunks; c++, in += 7, out += 8) {
-        encode_7to8(in, out);
+#if defined(__x86_64__) || defined(_M_X64)
+    if (CpuHasFastBMI2()) {
+        for (size_t c = 0; c < full_chunks; c++, in += 7, out += 8) {
+            Encode7to8_BMI2(in, out);
+        }
+    } else
+#endif
+    {
+        for (size_t c = 0; c < full_chunks; c++, in += 7, out += 8) {
+            Encode7to8_SWAR(in, out);
+        }
     }
 
     if (rem) {
         uint8_t b[7] = {0};
-        memcpy(b, in, rem);
+        std::memcpy(b, in, rem);
         uint8_t tmp[8];
-        encode_7to8(b, tmp);
-        memcpy(out, tmp, rem + 1);
+        Encode7to8_SWAR(b, tmp);
+        std::memcpy(out, tmp, rem + 1);
     }
 
     Napi::Uint8Array out_ta = Napi::Uint8Array::New(env, out_len, ab, 0);
+    if (env.IsExceptionPending() || out_ta.IsEmpty()) return env.Null();
     AddonData* addonData = env.GetInstanceData<AddonData>();
     return addonData->encodeResultConstructor.New({ out_ta });
 }
 
 template <typename CharT>
 static inline void DecodeImpl(const CharT* in, size_t il, uint8_t* out) {
-    auto decode_8to7 = [](const CharT* src, uint8_t* dst) {
-        dst[0] = static_cast<uint8_t>((src[0] << 1) | (src[1] >> 6));
-        dst[1] = static_cast<uint8_t>((src[1] << 2) | (src[2] >> 5));
-        dst[2] = static_cast<uint8_t>((src[2] << 3) | (src[3] >> 4));
-        dst[3] = static_cast<uint8_t>((src[3] << 4) | (src[4] >> 3));
-        dst[4] = static_cast<uint8_t>((src[4] << 5) | (src[5] >> 2));
-        dst[5] = static_cast<uint8_t>((src[5] << 6) | (src[6] >> 1));
-        dst[6] = static_cast<uint8_t>((src[6] << 7) | src[7]);
-    };
-
     size_t full_chunks = il / 8;
-    for (size_t c = 0; c < full_chunks; c++, in += 8, out += 7) {
-        decode_8to7(in, out);
+
+    if constexpr (sizeof(CharT) == 1) {
+#if defined(__x86_64__) || defined(_M_X64)
+        if (CpuHasFastBMI2()) {
+            for (size_t c = 0; c < full_chunks; c++, in += 8, out += 7) {
+                Decode8to7_BMI2(reinterpret_cast<const uint8_t*>(in), out);
+            }
+        } else
+#endif
+        {
+            for (size_t c = 0; c < full_chunks; c++, in += 8, out += 7) {
+                Decode8to7_SWAR(reinterpret_cast<const uint8_t*>(in), out);
+            }
+        }
+    } else {
+        for (size_t c = 0; c < full_chunks; c++, in += 8, out += 7) {
+            Decode8to7_Char16(reinterpret_cast<const char16_t*>(in), out);
+        }
     }
 
     size_t rem = il - (full_chunks * 8);
@@ -825,7 +1145,11 @@ static inline void DecodeImpl(const CharT* in, size_t il, uint8_t* out) {
         CharT c[8] = {0};
         std::memcpy(c, in, rem * sizeof(CharT));
         uint8_t tmp[7];
-        decode_8to7(c, tmp);
+        if constexpr (sizeof(CharT) == 1) {
+            Decode8to7_SWAR(reinterpret_cast<const uint8_t*>(c), tmp);
+        } else {
+            Decode8to7_Char16(reinterpret_cast<const char16_t*>(c), tmp);
+        }
         std::memcpy(out, tmp, (rem * 7) / 8);
     }
 }
@@ -845,8 +1169,9 @@ static Napi::Value Decode(const Napi::CallbackInfo& info) {
         if (v8_val->IsString()) {
             v8::Local<v8::String> v8_str = v8_val.As<v8::String>();
             size_t il = v8_str->Length();
-            size_t out_len = (il * 7) / 8;
+            size_t out_len = (il / 8) * 7 + ((il & 7) * 7) / 8;
             Napi::ArrayBuffer ab = Napi::ArrayBuffer::New(env, out_len);
+            if (env.IsExceptionPending() || ab.IsEmpty() || (out_len > 0 && !ab.Data())) return env.Null();
             uint8_t* out = reinterpret_cast<uint8_t*>(ab.Data());
             {
                 v8::String::ValueView view(isolate, v8_str);
@@ -863,8 +1188,9 @@ static Napi::Value Decode(const Napi::CallbackInfo& info) {
 
     std::u16string str_holder = info[0].As<Napi::String>().Utf16Value();
     size_t il = str_holder.length();
-    size_t out_len = (il * 7) / 8;
+    size_t out_len = (il / 8) * 7 + ((il & 7) * 7) / 8;
     Napi::ArrayBuffer ab = Napi::ArrayBuffer::New(env, out_len);
+    if (env.IsExceptionPending() || ab.IsEmpty() || (out_len > 0 && !ab.Data())) return env.Null();
     uint8_t* out = reinterpret_cast<uint8_t*>(ab.Data());
     DecodeImpl(reinterpret_cast<const char16_t*>(str_holder.data()), il, out);
     return Napi::Uint8Array::New(env, out_len, ab, 0);
@@ -882,6 +1208,7 @@ static inline int HexVal(CharT c) {
 template <typename CharT>
 static void ParseJSTemplateLiteralsImpl(const CharT* input, size_t len, ParsedStringResult& res) {
     res.error = true;
+    res.oom = false;
     res.buf = nullptr;
     res.len = 0;
 
@@ -894,7 +1221,7 @@ static void ParseJSTemplateLiteralsImpl(const CharT* input, size_t len, ParsedSt
         if (start == end) return;
         CharT c = input[start];
         if (c == '`') break;
-        if (c != ' ' && (c < '\t' || c > '\r') && c != 0xA0 && c != 0xFEFF) {
+        if (!IsTemplateLiteralWhitespace(c)) {
             return;
         }
     }
@@ -903,7 +1230,7 @@ static void ParseJSTemplateLiteralsImpl(const CharT* input, size_t len, ParsedSt
         if (end == start) return;
         CharT c = input[end];
         if (c == '`') break;
-        if (c != ' ' && (c < '\t' || c > '\r') && c != 0xA0 && c != 0xFEFF) {
+        if (!IsTemplateLiteralWhitespace(c)) {
             return;
         }
     }
@@ -912,7 +1239,10 @@ static void ParseJSTemplateLiteralsImpl(const CharT* input, size_t len, ParsedSt
     size_t cap = end - start;
 
     char* buf8 = static_cast<char*>(std::malloc(cap));
-    if (!buf8) return;
+    if (!buf8) {
+        res.oom = true;
+        return;
+    }
     char16_t* buf16 = nullptr;
     bool is_one_byte = true;
     size_t out_len = 0;
@@ -930,6 +1260,7 @@ static void ParseJSTemplateLiteralsImpl(const CharT* input, size_t len, ParsedSt
     auto switchToTwoByte = [&]() -> bool {
         buf16 = static_cast<char16_t*>(std::malloc(cap * sizeof(char16_t)));
         if (!buf16) {
+            res.oom = true;
             cleanup();
             return false;
         }
@@ -954,10 +1285,211 @@ static void ParseJSTemplateLiteralsImpl(const CharT* input, size_t len, ParsedSt
 
     while (i < end) {
         size_t chunkStart = i;
+
+        if constexpr (sizeof(CharT) == 1) {
+#if defined(__x86_64__) || defined(_M_X64)
+            const __m128i v_slash  = _mm_set1_epi8('\\');
+            const __m128i v_grave  = _mm_set1_epi8('`');
+            const __m128i v_dollar = _mm_set1_epi8('$');
+            const __m128i v_cr     = _mm_set1_epi8('\r');
+
+            while (i + 16 <= end) {
+                __m128i v = _mm_loadu_si128(reinterpret_cast<const __m128i*>(input + i));
+                __m128i m_slash  = _mm_cmpeq_epi8(v, v_slash);
+                __m128i m_grave  = _mm_cmpeq_epi8(v, v_grave);
+                __m128i m_dollar = _mm_cmpeq_epi8(v, v_dollar);
+                __m128i m_cr     = _mm_cmpeq_epi8(v, v_cr);
+                __m128i any = _mm_or_si128(_mm_or_si128(m_slash, m_grave), _mm_or_si128(m_dollar, m_cr));
+                int mask = _mm_movemask_epi8(any);
+                if (mask != 0) {
+                    bool stop = false;
+                    while (mask != 0) {
+#if defined(_MSC_VER)
+                        unsigned long offset;
+                        _BitScanForward(&offset, mask);
+#else
+                        unsigned long offset = __builtin_ctz(mask);
+#endif
+                        size_t pos = i + offset;
+                        CharT c = input[pos];
+                        if (c == '$') {
+                            if (pos + 1 < end && input[pos + 1] == '{') {
+                                i = pos;
+                                stop = true;
+                                break;
+                            }
+                        } else {
+                            i = pos;
+                            stop = true;
+                            break;
+                        }
+                        mask &= mask - 1;
+                    }
+                    if (stop) break;
+                }
+                i += 16;
+            }
+#elif defined(__aarch64__) || defined(_M_ARM64)
+            const uint8x16_t v_slash  = vdupq_n_u8('\\');
+            const uint8x16_t v_grave  = vdupq_n_u8('`');
+            const uint8x16_t v_dollar = vdupq_n_u8('$');
+            const uint8x16_t v_cr     = vdupq_n_u8('\r');
+
+            while (i + 16 <= end) {
+                uint8x16_t v = vld1q_u8(reinterpret_cast<const uint8_t*>(input + i));
+                uint8x16_t m_slash  = vceqq_u8(v, v_slash);
+                uint8x16_t m_grave  = vceqq_u8(v, v_grave);
+                uint8x16_t m_dollar = vceqq_u8(v, v_dollar);
+                uint8x16_t m_cr     = vceqq_u8(v, v_cr);
+                uint8x16_t any = vorrq_u8(vorrq_u8(m_slash, m_grave), vorrq_u8(m_dollar, m_cr));
+                uint64_t lo = vgetq_lane_u64(vreinterpretq_u64_u8(any), 0);
+                uint64_t hi = vgetq_lane_u64(vreinterpretq_u64_u8(any), 1);
+                if ((lo | hi) != 0) {
+                    bool stop = false;
+                    while (lo != 0) {
+#if defined(_MSC_VER)
+                        unsigned long offset;
+                        _BitScanForward64(&offset, lo);
+#else
+                        unsigned long offset = __builtin_ctzll(lo);
+#endif
+                        size_t pos = i + (offset >> 3);
+                        CharT c = input[pos];
+                        if (c == '$') {
+                            if (pos + 1 < end && input[pos + 1] == '{') {
+                                i = pos;
+                                stop = true;
+                                break;
+                            }
+                        } else {
+                            i = pos;
+                            stop = true;
+                            break;
+                        }
+                        lo &= ~(0xFFULL << (offset & ~7ULL));
+                    }
+                    if (stop) break;
+
+                    while (hi != 0) {
+#if defined(_MSC_VER)
+                        unsigned long offset;
+                        _BitScanForward64(&offset, hi);
+#else
+                        unsigned long offset = __builtin_ctzll(hi);
+#endif
+                        size_t pos = i + 8 + (offset >> 3);
+                        CharT c = input[pos];
+                        if (c == '$') {
+                            if (pos + 1 < end && input[pos + 1] == '{') {
+                                i = pos;
+                                stop = true;
+                                break;
+                            }
+                        } else {
+                            i = pos;
+                            stop = true;
+                            break;
+                        }
+                        hi &= ~(0xFFULL << (offset & ~7ULL));
+                    }
+                    if (stop) break;
+                }
+                i += 16;
+            }
+#elif (defined(__PPC64__) || defined(__ppc64__) || defined(_ARCH_PPC64)) && defined(__ALTIVEC__)
+            const __vector unsigned char v_slash  = vec_splats(static_cast<unsigned char>('\\'));
+            const __vector unsigned char v_grave  = vec_splats(static_cast<unsigned char>('`'));
+            const __vector unsigned char v_dollar = vec_splats(static_cast<unsigned char>('$'));
+            const __vector unsigned char v_cr     = vec_splats(static_cast<unsigned char>('\r'));
+            const __vector unsigned char zero     = vec_splats(static_cast<unsigned char>(0));
+
+            while (i + 16 <= end) {
+                __vector unsigned char v = vec_xl(0, reinterpret_cast<const unsigned char*>(input + i));
+                auto m_slash  = vec_cmpeq(v, v_slash);
+                auto m_grave  = vec_cmpeq(v, v_grave);
+                auto m_dollar = vec_cmpeq(v, v_dollar);
+                auto m_cr     = vec_cmpeq(v, v_cr);
+                auto any = vec_or(vec_or(m_slash, m_grave), vec_or(m_dollar, m_cr));
+                if (vec_any_ne(((__vector unsigned char)any), zero)) {
+                    bool stop = false;
+#if defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
+                    uint64_t lo = vec_extract(((__vector unsigned long long)any), 0);
+                    uint64_t hi = vec_extract(((__vector unsigned long long)any), 1);
+                    while (lo != 0) {
+                        unsigned long offset = __builtin_ctzll(lo);
+                        size_t pos = i + (offset >> 3);
+                        CharT c = input[pos];
+                        if (c == '$') {
+                            if (pos + 1 < end && input[pos + 1] == '{') {
+                                i = pos; stop = true; break;
+                            }
+                        } else {
+                            i = pos; stop = true; break;
+                        }
+                        lo &= ~(0xFFULL << (offset & ~7ULL));
+                    }
+                    if (stop) break;
+
+                    while (hi != 0) {
+                        unsigned long offset = __builtin_ctzll(hi);
+                        size_t pos = i + 8 + (offset >> 3);
+                        CharT c = input[pos];
+                        if (c == '$') {
+                            if (pos + 1 < end && input[pos + 1] == '{') {
+                                i = pos; stop = true; break;
+                            }
+                        } else {
+                            i = pos; stop = true; break;
+                        }
+                        hi &= ~(0xFFULL << (offset & ~7ULL));
+                    }
+                    if (stop) break;
+#else
+                    uint64_t hi = vec_extract(((__vector unsigned long long)any), 0);
+                    uint64_t lo = vec_extract(((__vector unsigned long long)any), 1);
+                    while (hi != 0) {
+                        unsigned long offset = __builtin_clzll(hi);
+                        size_t pos = i + (offset >> 3);
+                        CharT c = input[pos];
+                        if (c == '$') {
+                            if (pos + 1 < end && input[pos + 1] == '{') {
+                                i = pos; stop = true; break;
+                            }
+                        } else {
+                            i = pos; stop = true; break;
+                        }
+                        hi &= ~(0xFF00000000000000ULL >> (offset & ~7ULL));
+                    }
+                    if (stop) break;
+
+                    while (lo != 0) {
+                        unsigned long offset = __builtin_clzll(lo);
+                        size_t pos = i + 8 + (offset >> 3);
+                        CharT c = input[pos];
+                        if (c == '$') {
+                            if (pos + 1 < end && input[pos + 1] == '{') {
+                                i = pos; stop = true; break;
+                            }
+                        } else {
+                            i = pos; stop = true; break;
+                        }
+                        lo &= ~(0xFF00000000000000ULL >> (offset & ~7ULL));
+                    }
+                    if (stop) break;
+#endif
+                }
+                i += 16;
+            }
+#endif
+        }
+
         while (i < end) {
             CharT c = input[i];
-            if (c == '\\' || c == '`' || c == '$' || c == '\r') {
+            if (c == '\\' || c == '`' || c == '\r') {
                 break;
+            }
+            if (c == '$') {
+                if (i + 1 < end && input[i + 1] == '{') break;
             }
             i++;
         }
@@ -999,7 +1531,7 @@ static void ParseJSTemplateLiteralsImpl(const CharT* input, size_t len, ParsedSt
             if (i + 1 < end && input[i + 1] == '\n') {
                 i++;
             }
-            pushChar(u'\n');
+            if (!pushChar(u'\n')) return;
             i++;
             continue;
         }
@@ -1008,13 +1540,9 @@ static void ParseJSTemplateLiteralsImpl(const CharT* input, size_t len, ParsedSt
             return;
         }
         if (c == '$') {
-            if (i + 1 < end && input[i + 1] == '{') {
-                cleanup();
-                return;
-            }
-            pushChar(u'$');
-            i++;
-            continue;
+            // Must have been followed by '{' to break out of chunk loop
+            cleanup();
+            return;
         }
 
         // c is '\\'
@@ -1025,23 +1553,23 @@ static void ParseJSTemplateLiteralsImpl(const CharT* input, size_t len, ParsedSt
         }
         uint16_t next = static_cast<uint16_t>(static_cast<std::make_unsigned_t<CharT>>(input[i]));
         switch (next) {
-            case 'r': pushChar(u'\r'); i++; break;
-            case 'n': pushChar(u'\n'); i++; break;
-            case 't': pushChar(u'\t'); i++; break;
-            case 'b': pushChar(u'\b'); i++; break;
-            case 'f': pushChar(u'\f'); i++; break;
-            case 'v': pushChar(u'\v'); i++; break;
-            case '\\': pushChar(u'\\'); i++; break;
-            case '`': pushChar(u'`'); i++; break;
-            case '\'': pushChar(u'\''); i++; break;
-            case '"': pushChar(u'"'); i++; break;
-            case '$': pushChar(u'$'); i++; break;
+            case 'r': if (!pushChar(u'\r')) return; i++; break;
+            case 'n': if (!pushChar(u'\n')) return; i++; break;
+            case 't': if (!pushChar(u'\t')) return; i++; break;
+            case 'b': if (!pushChar(u'\b')) return; i++; break;
+            case 'f': if (!pushChar(u'\f')) return; i++; break;
+            case 'v': if (!pushChar(u'\v')) return; i++; break;
+            case '\\': if (!pushChar(u'\\')) return; i++; break;
+            case '`': if (!pushChar(u'`')) return; i++; break;
+            case '\'': if (!pushChar(u'\'')) return; i++; break;
+            case '"': if (!pushChar(u'"')) return; i++; break;
+            case '$': if (!pushChar(u'$')) return; i++; break;
             case '0': {
                 if (i + 1 < end && input[i + 1] >= '0' && input[i + 1] <= '9') {
                     cleanup();
                     return;
                 }
-                pushChar(u'\0');
+                if (!pushChar(u'\0')) return;
                 i++;
                 break;
             }
@@ -1051,7 +1579,7 @@ static void ParseJSTemplateLiteralsImpl(const CharT* input, size_t len, ParsedSt
                 if (h1 == -1) { cleanup(); return; }
                 int h2 = HexVal(input[i + 2]);
                 if (h2 == -1) { cleanup(); return; }
-                pushChar(static_cast<char16_t>((h1 << 4) | h2));
+                if (!pushChar(static_cast<char16_t>((h1 << 4) | h2))) return;
                 i += 3;
                 break;
             }
@@ -1134,6 +1662,7 @@ static void ParseJSTemplateLiteralsImpl(const CharT* input, size_t len, ParsedSt
     res.len = out_len;
     res.is_one_byte = is_one_byte;
     res.error = false;
+    res.oom = false;
 }
 
 static Napi::Value ParseJSTemplateLiterals(const Napi::CallbackInfo& info) {
@@ -1165,6 +1694,10 @@ static Napi::Value ParseJSTemplateLiterals(const Napi::CallbackInfo& info) {
                     ParseJSTemplateLiteralsImpl(reinterpret_cast<const char16_t*>(view.data16()), view.length(), res);
                 }
             }
+            if (res.oom) {
+                Napi::Error::New(env, "Out of memory").ThrowAsJavaScriptException();
+                return env.Null();
+            }
             if (res.error) {
                 return ThrowSyntaxError();
             }
@@ -1178,6 +1711,10 @@ static Napi::Value ParseJSTemplateLiterals(const Napi::CallbackInfo& info) {
 
     std::u16string input = info[0].As<Napi::String>().Utf16Value();
     ParseJSTemplateLiteralsImpl(input.data(), input.length(), res);
+    if (res.oom) {
+        Napi::Error::New(env, "Out of memory").ThrowAsJavaScriptException();
+        return env.Null();
+    }
     if (res.error) {
         return ThrowSyntaxError();
     }
@@ -1194,28 +1731,42 @@ static Napi::Value ParseJSTemplateLiterals(const Napi::CallbackInfo& info) {
 #include <dlfcn.h>
 #endif
 
-static bool SafeTestV8(napi_env env) {
+static bool TestV8Internal(v8::Isolate* isolate, napi_value str) {
+    v8::Local<v8::Value>* v8_val = reinterpret_cast<v8::Local<v8::Value>*>(&str);
+    if (!(*v8_val)->IsString()) return false;
+
+    v8::Local<v8::String> v8_str = (*v8_val).As<v8::String>();
+    v8::String::ValueView view(isolate, v8_str);
+    return view.is_one_byte() && view.length() == 1 && view.data8() != nullptr && view.data8()[0] == '`';
+}
+
 #if defined(_MSC_VER)
-    __try
-#else
+static bool SafeCallTestV8(v8::Isolate* isolate, napi_value str) {
+    __try {
+        return TestV8Internal(isolate, str);
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+#endif
+
+static bool SafeTestV8(napi_env env) {
+#if !defined(_MSC_VER)
     if (!dlsym(RTLD_DEFAULT, "_ZN2v87Isolate10GetCurrentEv")) {
         return false;
     }
 #endif
-    {
-        v8::Isolate* isolate = v8::Isolate::GetCurrent();
-        if (!isolate) return false;
+    v8::Isolate* isolate = v8::Isolate::GetCurrent();
+    if (!isolate) return false;
 
-        napi_value str = nullptr;
-        if (napi_create_string_utf8(env, "`", 1, &str) != napi_ok || !str) return false;
+    napi_value str = nullptr;
+    if (napi_create_string_utf8(env, "`", 1, &str) != napi_ok || !str) return false;
 
-        v8::Local<v8::Value>* v8_val = reinterpret_cast<v8::Local<v8::Value>*>(&str);
-        return (*v8_val)->IsString();
-    }
 #if defined(_MSC_VER)
-    __except (EXCEPTION_EXECUTE_HANDLER) {
-        return false;
-    }
+    return SafeCallTestV8(isolate, str);
+#else
+    return TestV8Internal(isolate, str);
 #endif
 }
 #endif
