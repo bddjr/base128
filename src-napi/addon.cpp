@@ -64,6 +64,14 @@ static inline uint64_t BSwap64(uint64_t v) {
 #endif
 }
 
+static inline uint64_t ToBE64(uint64_t v) {
+#if defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
+    return v;
+#else
+    return BSwap64(v);
+#endif
+}
+
 #if defined(__x86_64__) || defined(_M_X64)
 static inline bool CpuHasFastBMI2() {
     static const bool has_fast_bmi2 = []() {
@@ -104,80 +112,111 @@ static inline bool CpuHasFastBMI2() {
 #if defined(__GNUC__) || defined(__clang__)
 __attribute__((target("bmi2")))
 #endif
-static inline void Encode7to8_BMI2(const uint8_t* src, uint8_t* dst) {
-    uint64_t in_val = 0;
-    std::memcpy(&in_val, src, 7);
-    uint64_t src_56 = BSwap64(in_val) >> 8;
-    uint64_t out_val = BSwap64(_pdep_u64(src_56, 0x7F7F7F7F7F7F7F7FULL));
-    std::memcpy(dst, &out_val, 8);
+static void EncodeLoop_BMI2(const uint8_t* src, uint8_t* dst, size_t full_chunks) {
+    size_t c = 0;
+    for (; c + 1 < full_chunks; c++, src += 7, dst += 8) {
+        uint64_t in_val;
+        std::memcpy(&in_val, src, 8);
+        uint64_t src_56 = BSwap64(in_val) >> 8;
+        uint64_t out_val = BSwap64(_pdep_u64(src_56, 0x7F7F7F7F7F7F7F7FULL));
+        std::memcpy(dst, &out_val, 8);
+    }
+    if (c < full_chunks) {
+        uint64_t in_val = 0;
+        std::memcpy(&in_val, src, 7);
+        uint64_t src_56 = BSwap64(in_val) >> 8;
+        uint64_t out_val = BSwap64(_pdep_u64(src_56, 0x7F7F7F7F7F7F7F7FULL));
+        std::memcpy(dst, &out_val, 8);
+    }
 }
 
 #if defined(__GNUC__) || defined(__clang__)
 __attribute__((target("bmi2")))
 #endif
-static inline void Decode8to7_BMI2(const uint8_t* in, uint8_t* out) {
-    uint64_t v;
-    std::memcpy(&v, in, 8);
-    uint64_t src_56 = _pext_u64(BSwap64(v), 0x7F7F7F7F7F7F7F7FULL);
-    uint64_t out_val = BSwap64(src_56 << 8);
-    std::memcpy(out, &out_val, 7);
+static void DecodeLoop_BMI2(const uint8_t* in, uint8_t* out, size_t full_chunks) {
+    size_t c = 0;
+    for (; c + 1 < full_chunks; c++, in += 8, out += 7) {
+        uint64_t v;
+        std::memcpy(&v, in, 8);
+        uint64_t src_56 = _pext_u64(BSwap64(v), 0x7F7F7F7F7F7F7F7FULL);
+        uint64_t out_val = BSwap64(src_56 << 8);
+        std::memcpy(out, &out_val, 8);
+    }
+    if (c < full_chunks) {
+        uint64_t v;
+        std::memcpy(&v, in, 8);
+        uint64_t src_56 = _pext_u64(BSwap64(v), 0x7F7F7F7F7F7F7F7FULL);
+        uint64_t out_val = BSwap64(src_56 << 8);
+        std::memcpy(out, &out_val, 7);
+    }
 }
 #endif
 
-static inline void Encode7to8_SWAR(const uint8_t* src, uint8_t* dst) {
-    uint64_t s0 = src[0], s1 = src[1], s2 = src[2], s3 = src[3];
-    uint64_t s4 = src[4], s5 = src[5], s6 = src[6];
-
-    uint64_t d0 = s0 >> 1;
-    uint64_t d1 = 127 & ((s0 << 6) | (s1 >> 2));
-    uint64_t d2 = 127 & ((s1 << 5) | (s2 >> 3));
-    uint64_t d3 = 127 & ((s2 << 4) | (s3 >> 4));
-    uint64_t d4 = 127 & ((s3 << 3) | (s4 >> 5));
-    uint64_t d5 = 127 & ((s4 << 2) | (s5 >> 6));
-    uint64_t d6 = 127 & ((s5 << 1) | (s6 >> 7));
-    uint64_t d7 = 127 & s6;
-
-    uint64_t out_val = d0 | (d1 << 8) | (d2 << 16) | (d3 << 24)
-                     | (d4 << 32) | (d5 << 40) | (d6 << 48) | (d7 << 56);
+static inline void Encode7to8_SWAR(const uint8_t* src, uint8_t* dst, bool can_read_8) {
+    uint64_t in_val = 0;
+    if (can_read_8) {
+        std::memcpy(&in_val, src, 8);
+    } else {
+        std::memcpy(&in_val, src, 7);
+    }
+    uint64_t x = ToBE64(in_val) >> 8; // 56 bits in low bits
+    x = ((x & 0x0FFFFFFF0000000ULL) << 4) | (x & 0x000000000FFFFFFFULL);
+    x = ((x & 0x0FFFC0000FFFC000ULL) << 2) | (x & 0x00003FFF00003FFFULL);
+    x = ((x & 0x3F803F803F803F80ULL) << 1) | (x & 0x007F007F007F007FULL);
+    uint64_t out_val = ToBE64(x);
     std::memcpy(dst, &out_val, 8);
 }
 
-static inline void Decode8to7_SWAR(const uint8_t* in, uint8_t* out) {
+static inline void Decode8to7_SWAR(const uint8_t* in, uint8_t* out, bool can_write_8) {
     uint64_t v;
     std::memcpy(&v, in, 8);
-    uint64_t s0 = v & 0xFF;
-    uint64_t s1 = (v >> 8) & 0xFF;
-    uint64_t s2 = (v >> 16) & 0xFF;
-    uint64_t s3 = (v >> 24) & 0xFF;
-    uint64_t s4 = (v >> 32) & 0xFF;
-    uint64_t s5 = (v >> 40) & 0xFF;
-    uint64_t s6 = (v >> 48) & 0xFF;
-    uint64_t s7 = (v >> 56) & 0xFF;
-
-    uint64_t d0 = (s0 << 1) | (s1 >> 6);
-    uint64_t d1 = (s1 << 2) | (s2 >> 5);
-    uint64_t d2 = (s2 << 3) | (s3 >> 4);
-    uint64_t d3 = (s3 << 4) | (s4 >> 3);
-    uint64_t d4 = (s4 << 5) | (s5 >> 2);
-    uint64_t d5 = (s5 << 6) | (s6 >> 1);
-    uint64_t d6 = (s6 << 7) | s7;
-
-    uint64_t out_val = (d0 & 0xFF) | ((d1 & 0xFF) << 8) | ((d2 & 0xFF) << 16) | ((d3 & 0xFF) << 24)
-                     | ((d4 & 0xFF) << 32) | ((d5 & 0xFF) << 40) | ((d6 & 0xFF) << 48);
-    std::memcpy(out, &out_val, 7);
+    uint64_t x = ToBE64(v) & 0x7F7F7F7F7F7F7F7FULL;
+    x = ((x & 0x7F007F007F007F00ULL) >> 1) | (x & 0x007F007F007F007FULL);
+    x = ((x & 0x3FFF00003FFF0000ULL) >> 2) | (x & 0x00003FFF00003FFFULL);
+    uint64_t src_56 = ((x & 0x0FFFFFFF00000000ULL) >> 4) | (x & 0x000000000FFFFFFFULL);
+    uint64_t out_val = ToBE64(src_56 << 8);
+    if (can_write_8) {
+        std::memcpy(out, &out_val, 8);
+    } else {
+        std::memcpy(out, &out_val, 7);
+    }
 }
 
-static inline void Decode8to7_Char16(const char16_t* in, uint8_t* out) {
-    uint64_t d0 = static_cast<uint8_t>((in[0] << 1) | (in[1] >> 6));
-    uint64_t d1 = static_cast<uint8_t>((in[1] << 2) | (in[2] >> 5));
-    uint64_t d2 = static_cast<uint8_t>((in[2] << 3) | (in[3] >> 4));
-    uint64_t d3 = static_cast<uint8_t>((in[3] << 4) | (in[4] >> 3));
-    uint64_t d4 = static_cast<uint8_t>((in[4] << 5) | (in[5] >> 2));
-    uint64_t d5 = static_cast<uint8_t>((in[5] << 6) | (in[6] >> 1));
-    uint64_t d6 = static_cast<uint8_t>((in[6] << 7) | in[7]);
-    uint64_t out_val = (d0 & 0xFF) | ((d1 & 0xFF) << 8) | ((d2 & 0xFF) << 16) | ((d3 & 0xFF) << 24)
-                     | ((d4 & 0xFF) << 32) | ((d5 & 0xFF) << 40) | ((d6 & 0xFF) << 48);
-    std::memcpy(out, &out_val, 7);
+static inline void Decode8to7_Char16(const char16_t* in, uint8_t* out, bool can_write_8) {
+    uint8_t tmp[8];
+    tmp[0] = static_cast<uint8_t>((in[0] << 1) | (in[1] >> 6));
+    tmp[1] = static_cast<uint8_t>((in[1] << 2) | (in[2] >> 5));
+    tmp[2] = static_cast<uint8_t>((in[2] << 3) | (in[3] >> 4));
+    tmp[3] = static_cast<uint8_t>((in[3] << 4) | (in[4] >> 3));
+    tmp[4] = static_cast<uint8_t>((in[4] << 5) | (in[5] >> 2));
+    tmp[5] = static_cast<uint8_t>((in[5] << 6) | (in[6] >> 1));
+    tmp[6] = static_cast<uint8_t>((in[6] << 7) | in[7]);
+    tmp[7] = 0;
+    if (can_write_8) {
+        std::memcpy(out, tmp, 8);
+    } else {
+        std::memcpy(out, tmp, 7);
+    }
+}
+
+static void EncodeLoop_SWAR(const uint8_t* src, uint8_t* dst, size_t full_chunks) {
+    size_t c = 0;
+    for (; c + 1 < full_chunks; c++, src += 7, dst += 8) {
+        Encode7to8_SWAR(src, dst, true);
+    }
+    if (c < full_chunks) {
+        Encode7to8_SWAR(src, dst, false);
+    }
+}
+
+static void DecodeLoop_SWAR(const uint8_t* in, uint8_t* out, size_t full_chunks) {
+    size_t c = 0;
+    for (; c + 1 < full_chunks; c++, in += 8, out += 7) {
+        Decode8to7_SWAR(in, out, true);
+    }
+    if (c < full_chunks) {
+        Decode8to7_SWAR(in, out, false);
+    }
 }
 
 static inline void Widen8To16(const uint8_t* src, char16_t* dst, size_t len) {
@@ -1094,22 +1133,21 @@ static Napi::Value Encode(const Napi::CallbackInfo& info) {
     size_t full_chunks = il / 7;
 #if defined(__x86_64__) || defined(_M_X64)
     if (CpuHasFastBMI2()) {
-        for (size_t c = 0; c < full_chunks; c++, in += 7, out += 8) {
-            Encode7to8_BMI2(in, out);
-        }
+        EncodeLoop_BMI2(in, out, full_chunks);
     } else
 #endif
     {
-        for (size_t c = 0; c < full_chunks; c++, in += 7, out += 8) {
-            Encode7to8_SWAR(in, out);
-        }
+        EncodeLoop_SWAR(in, out, full_chunks);
     }
+
+    in += full_chunks * 7;
+    out += full_chunks * 8;
 
     if (rem) {
         uint8_t b[7] = {0};
         std::memcpy(b, in, rem);
         uint8_t tmp[8];
-        Encode7to8_SWAR(b, tmp);
+        Encode7to8_SWAR(b, tmp, false);
         std::memcpy(out, tmp, rem + 1);
     }
 
@@ -1126,33 +1164,37 @@ static inline void DecodeImpl(const CharT* in, size_t il, uint8_t* out) {
     if constexpr (sizeof(CharT) == 1) {
 #if defined(__x86_64__) || defined(_M_X64)
         if (CpuHasFastBMI2()) {
-            for (size_t c = 0; c < full_chunks; c++, in += 8, out += 7) {
-                Decode8to7_BMI2(reinterpret_cast<const uint8_t*>(in), out);
-            }
+            DecodeLoop_BMI2(reinterpret_cast<const uint8_t*>(in), out, full_chunks);
         } else
 #endif
         {
-            for (size_t c = 0; c < full_chunks; c++, in += 8, out += 7) {
-                Decode8to7_SWAR(reinterpret_cast<const uint8_t*>(in), out);
-            }
+            DecodeLoop_SWAR(reinterpret_cast<const uint8_t*>(in), out, full_chunks);
         }
     } else {
-        for (size_t c = 0; c < full_chunks; c++, in += 8, out += 7) {
-            Decode8to7_Char16(reinterpret_cast<const char16_t*>(in), out);
+        size_t c = 0;
+        const char16_t* in16 = reinterpret_cast<const char16_t*>(in);
+        uint8_t* out_curr = out;
+        for (; c + 1 < full_chunks; c++, in16 += 8, out_curr += 7) {
+            Decode8to7_Char16(in16, out_curr, true);
+        }
+        if (c < full_chunks) {
+            Decode8to7_Char16(in16, out_curr, false);
         }
     }
 
     size_t rem = il - (full_chunks * 8);
     if (rem > 1) {
+        const CharT* in_rem = in + (full_chunks * 8);
+        uint8_t* out_rem = out + (full_chunks * 7);
         CharT c[8] = {0};
-        std::memcpy(c, in, rem * sizeof(CharT));
-        uint8_t tmp[7];
+        std::memcpy(c, in_rem, rem * sizeof(CharT));
+        uint8_t tmp[8];
         if constexpr (sizeof(CharT) == 1) {
-            Decode8to7_SWAR(reinterpret_cast<const uint8_t*>(c), tmp);
+            Decode8to7_SWAR(reinterpret_cast<const uint8_t*>(c), tmp, false);
         } else {
-            Decode8to7_Char16(reinterpret_cast<const char16_t*>(c), tmp);
+            Decode8to7_Char16(reinterpret_cast<const char16_t*>(c), tmp, false);
         }
-        std::memcpy(out, tmp, (rem * 7) / 8);
+        std::memcpy(out_rem, tmp, (rem * 7) / 8);
     }
 }
 
