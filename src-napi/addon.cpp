@@ -1344,6 +1344,16 @@ static inline void FastCopyBytes(char* dst, const char* src, size_t len) {
         __m128i b = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src + len - 16));
         _mm_storeu_si128(reinterpret_cast<__m128i*>(dst), a);
         _mm_storeu_si128(reinterpret_cast<__m128i*>(dst + len - 16), b);
+#elif defined(__aarch64__) || defined(_M_ARM64)
+        uint8x16_t a = vld1q_u8(reinterpret_cast<const uint8_t*>(src));
+        uint8x16_t b = vld1q_u8(reinterpret_cast<const uint8_t*>(src + len - 16));
+        vst1q_u8(reinterpret_cast<uint8_t*>(dst), a);
+        vst1q_u8(reinterpret_cast<uint8_t*>(dst + len - 16), b);
+#elif (defined(__PPC64__) || defined(__ppc64__) || defined(_ARCH_PPC64)) && defined(__ALTIVEC__)
+        __vector unsigned char a = vec_xl(0, reinterpret_cast<const unsigned char*>(src));
+        __vector unsigned char b = vec_xl(0, reinterpret_cast<const unsigned char*>(src + len - 16));
+        vec_xst(a, 0, reinterpret_cast<unsigned char*>(dst));
+        vec_xst(b, 0, reinterpret_cast<unsigned char*>(dst + len - 16));
 #else
         std::memcpy(dst, src, len);
 #endif
