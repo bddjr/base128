@@ -1314,6 +1314,59 @@ static inline int HexVal(CharT c) {
 }
 
 
+static inline void FastCopyBytes(char* dst, const char* src, size_t len) {
+    if (len <= 8) {
+        if (len >= 4) {
+            uint32_t a, b;
+            std::memcpy(&a, src, 4);
+            std::memcpy(&b, src + len - 4, 4);
+            std::memcpy(dst, &a, 4);
+            std::memcpy(dst + len - 4, &b, 4);
+        } else if (len > 0) {
+            dst[0] = src[0];
+            dst[len / 2] = src[len / 2];
+            dst[len - 1] = src[len - 1];
+        }
+        return;
+    }
+    if (len <= 16) {
+        uint64_t a, b;
+        std::memcpy(&a, src, 8);
+        std::memcpy(&b, src + len - 8, 8);
+        std::memcpy(dst, &a, 8);
+        std::memcpy(dst + len - 8, &b, 8);
+        return;
+    }
+    if (len <= 32) {
+#if defined(__x86_64__) || defined(_M_X64)
+        __m128i a = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src));
+        __m128i b = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src + len - 16));
+        _mm_storeu_si128(reinterpret_cast<__m128i*>(dst), a);
+        _mm_storeu_si128(reinterpret_cast<__m128i*>(dst + len - 16), b);
+#else
+        std::memcpy(dst, src, len);
+#endif
+        return;
+    }
+    std::memcpy(dst, src, len);
+}
+
+static constexpr auto kSimpleEscapeTable = []() constexpr {
+    std::array<char, 256> table{};
+    table['r'] = '\r';
+    table['n'] = '\n';
+    table['t'] = '\t';
+    table['b'] = '\b';
+    table['f'] = '\f';
+    table['v'] = '\v';
+    table['\\'] = '\\';
+    table['`'] = '`';
+    table['\''] = '\'';
+    table['"'] = '"';
+    table['$'] = '$';
+    return table;
+}();
+
 template <UnsignedChar CharT>
 static void ParseJSTemplateLiteralsImpl(const CharT* input, size_t len, ParsedStringResult& res) {
     res.error = true;
@@ -1392,16 +1445,29 @@ static void ParseJSTemplateLiteralsImpl(const CharT* input, size_t len, ParsedSt
         return true;
     };
 
+#if defined(__x86_64__) || defined(_M_X64)
+    const __m128i v_slash  = _mm_set1_epi8('\\');
+    const __m128i v_grave  = _mm_set1_epi8('`');
+    const __m128i v_dollar = _mm_set1_epi8('$');
+    const __m128i v_cr     = _mm_set1_epi8('\r');
+#elif defined(__aarch64__) || defined(_M_ARM64)
+    const uint8x16_t v_slash  = vdupq_n_u8('\\');
+    const uint8x16_t v_grave  = vdupq_n_u8('`');
+    const uint8x16_t v_dollar = vdupq_n_u8('$');
+    const uint8x16_t v_cr     = vdupq_n_u8('\r');
+#elif (defined(__PPC64__) || defined(__ppc64__) || defined(_ARCH_PPC64)) && defined(__ALTIVEC__)
+    const __vector unsigned char v_slash  = vec_splats(static_cast<unsigned char>('\\'));
+    const __vector unsigned char v_grave  = vec_splats(static_cast<unsigned char>('`'));
+    const __vector unsigned char v_dollar = vec_splats(static_cast<unsigned char>('$'));
+    const __vector unsigned char v_cr     = vec_splats(static_cast<unsigned char>('\r'));
+    const __vector unsigned char zero     = vec_splats(static_cast<unsigned char>(0));
+#endif
+
     while (i < end) {
         size_t chunkStart = i;
 
         if constexpr (sizeof(CharT) == 1) {
 #if defined(__x86_64__) || defined(_M_X64)
-            const __m128i v_slash  = _mm_set1_epi8('\\');
-            const __m128i v_grave  = _mm_set1_epi8('`');
-            const __m128i v_dollar = _mm_set1_epi8('$');
-            const __m128i v_cr     = _mm_set1_epi8('\r');
-
             while (i + 16 <= end) {
                 __m128i v = _mm_loadu_si128(reinterpret_cast<const __m128i*>(input + i));
                 __m128i m_slash  = _mm_cmpeq_epi8(v, v_slash);
@@ -1434,16 +1500,11 @@ static void ParseJSTemplateLiteralsImpl(const CharT* input, size_t len, ParsedSt
                         }
                         mask &= mask - 1;
                     }
-                    if (stop) break;
+                    if (stop) goto found_escape;
                 }
                 i += 16;
             }
 #elif defined(__aarch64__) || defined(_M_ARM64)
-            const uint8x16_t v_slash  = vdupq_n_u8('\\');
-            const uint8x16_t v_grave  = vdupq_n_u8('`');
-            const uint8x16_t v_dollar = vdupq_n_u8('$');
-            const uint8x16_t v_cr     = vdupq_n_u8('\r');
-
             while (i + 16 <= end) {
                 uint8x16_t v = vld1q_u8(reinterpret_cast<const uint8_t*>(input + i));
                 uint8x16_t m_slash  = vceqq_u8(v, v_slash);
@@ -1477,7 +1538,7 @@ static void ParseJSTemplateLiteralsImpl(const CharT* input, size_t len, ParsedSt
                         }
                         lo &= ~(0xFFULL << (offset & ~7ULL));
                     }
-                    if (stop) break;
+                    if (stop) goto found_escape;
 
                     while (hi != 0) {
 #if defined(_MSC_VER)
@@ -1501,17 +1562,11 @@ static void ParseJSTemplateLiteralsImpl(const CharT* input, size_t len, ParsedSt
                         }
                         hi &= ~(0xFFULL << (offset & ~7ULL));
                     }
-                    if (stop) break;
+                    if (stop) goto found_escape;
                 }
                 i += 16;
             }
 #elif (defined(__PPC64__) || defined(__ppc64__) || defined(_ARCH_PPC64)) && defined(__ALTIVEC__)
-            const __vector unsigned char v_slash  = vec_splats(static_cast<unsigned char>('\\'));
-            const __vector unsigned char v_grave  = vec_splats(static_cast<unsigned char>('`'));
-            const __vector unsigned char v_dollar = vec_splats(static_cast<unsigned char>('$'));
-            const __vector unsigned char v_cr     = vec_splats(static_cast<unsigned char>('\r'));
-            const __vector unsigned char zero     = vec_splats(static_cast<unsigned char>(0));
-
             while (i + 16 <= end) {
                 __vector unsigned char v = vec_xl(0, reinterpret_cast<const unsigned char*>(input + i));
                 auto m_slash  = vec_cmpeq(v, v_slash);
@@ -1537,7 +1592,7 @@ static void ParseJSTemplateLiteralsImpl(const CharT* input, size_t len, ParsedSt
                         }
                         lo &= ~(0xFFULL << (offset & ~7ULL));
                     }
-                    if (stop) break;
+                    if (stop) goto found_escape;
 
                     while (hi != 0) {
                         unsigned long offset = __builtin_ctzll(hi);
@@ -1552,7 +1607,7 @@ static void ParseJSTemplateLiteralsImpl(const CharT* input, size_t len, ParsedSt
                         }
                         hi &= ~(0xFFULL << (offset & ~7ULL));
                     }
-                    if (stop) break;
+                    if (stop) goto found_escape;
 #else
                     uint64_t hi = vec_extract(((__vector unsigned long long)any), 0);
                     uint64_t lo = vec_extract(((__vector unsigned long long)any), 1);
@@ -1569,7 +1624,7 @@ static void ParseJSTemplateLiteralsImpl(const CharT* input, size_t len, ParsedSt
                         }
                         hi &= ~(0xFF00000000000000ULL >> (offset & ~7ULL));
                     }
-                    if (stop) break;
+                    if (stop) goto found_escape;
 
                     while (lo != 0) {
                         unsigned long offset = __builtin_clzll(lo);
@@ -1584,7 +1639,7 @@ static void ParseJSTemplateLiteralsImpl(const CharT* input, size_t len, ParsedSt
                         }
                         lo &= ~(0xFF00000000000000ULL >> (offset & ~7ULL));
                     }
-                    if (stop) break;
+                    if (stop) goto found_escape;
 #endif
                 }
                 i += 16;
@@ -1594,19 +1649,17 @@ static void ParseJSTemplateLiteralsImpl(const CharT* input, size_t len, ParsedSt
 
         while (i < end) {
             CharT c = input[i];
-            if (c == '\\' || c == '`' || c == '\r') {
-                break;
-            }
-            if (c == '$') {
-                if (i + 1 < end && input[i + 1] == '{') break;
-            }
+            if (c == '\\' || c == '`' || c == '\r') break;
+            if (c == '$' && i + 1 < end && input[i + 1] == '{') break;
             i++;
         }
+
+found_escape:
         if (i > chunkStart) {
             size_t chunkLen = i - chunkStart;
             if (is_one_byte) {
                 if constexpr (sizeof(CharT) == 1) {
-                    std::memcpy(buf8 + out_len, input + chunkStart, chunkLen);
+                    FastCopyBytes(buf8 + out_len, reinterpret_cast<const char*>(input + chunkStart), chunkLen);
                 } else {
                     bool has_wide = false;
                     for (size_t k = 0; k < chunkLen; k++) {
@@ -1636,134 +1689,245 @@ static void ParseJSTemplateLiteralsImpl(const CharT* input, size_t len, ParsedSt
         if (i >= end) break;
 
         CharT c = input[i];
-        if (c == '\r') {
-            if (i + 1 < end && input[i + 1] == '\n') {
-                i++;
-            }
-            if (!pushChar(u'\n')) return;
+        if (c == '\\') {
             i++;
-            continue;
-        }
-        if (c == '`') {
-            cleanup();
-            return;
-        }
-        if (c == '$') {
-            // Must have been followed by '{' to break out of chunk loop
-            cleanup();
-            return;
-        }
-
-        // c is '\\'
-        i++;
-        if (i >= end) {
-            cleanup();
-            return;
-        }
-        uint16_t next = static_cast<uint16_t>(static_cast<std::make_unsigned_t<CharT>>(input[i]));
-        switch (next) {
-            case 'r': if (!pushChar(u'\r')) return; i++; break;
-            case 'n': if (!pushChar(u'\n')) return; i++; break;
-            case 't': if (!pushChar(u'\t')) return; i++; break;
-            case 'b': if (!pushChar(u'\b')) return; i++; break;
-            case 'f': if (!pushChar(u'\f')) return; i++; break;
-            case 'v': if (!pushChar(u'\v')) return; i++; break;
-            case '\\': if (!pushChar(u'\\')) return; i++; break;
-            case '`': if (!pushChar(u'`')) return; i++; break;
-            case '\'': if (!pushChar(u'\'')) return; i++; break;
-            case '"': if (!pushChar(u'"')) return; i++; break;
-            case '$': if (!pushChar(u'$')) return; i++; break;
-            case '0': {
-                if (i + 1 < end && input[i + 1] >= '0' && input[i + 1] <= '9') {
-                    cleanup();
-                    return;
+            if (i >= end) {
+                cleanup();
+                return;
+            }
+            uint16_t next = static_cast<uint16_t>(static_cast<std::make_unsigned_t<CharT>>(input[i]));
+            if (is_one_byte) {
+                if (next < 256) {
+                    char esc = kSimpleEscapeTable[static_cast<uint8_t>(next)];
+                    if (esc != 0) {
+                        buf8[out_len++] = esc;
+                        i++;
+                        continue;
+                    }
+                    if (next == '0') {
+                        if (i + 1 < end && input[i + 1] >= '0' && input[i + 1] <= '9') {
+                            cleanup();
+                            return;
+                        }
+                        buf8[out_len++] = '\0';
+                        i++;
+                        continue;
+                    }
                 }
-                if (!pushChar(u'\0')) return;
-                i++;
-                break;
-            }
-            case 'x': {
-                if (i + 2 >= end) { cleanup(); return; }
-                int h1 = HexVal(input[i + 1]);
-                if (h1 == -1) { cleanup(); return; }
-                int h2 = HexVal(input[i + 2]);
-                if (h2 == -1) { cleanup(); return; }
-                if (!pushChar(static_cast<char16_t>((h1 << 4) | h2))) return;
-                i += 3;
-                break;
-            }
-            case 'u': {
-                if (i + 1 < end && input[i + 1] == '{') {
-                    size_t startHex = i + 2;
-                    uint32_t cp = 0;
-                    size_t k = startHex;
-                    for (; k < end; k++) {
-                        CharT ch = input[k];
-                        if (ch == '}') {
-                            if (k == startHex) {
+                switch (next) {
+                    case 'x': {
+                        if (i + 2 >= end) { cleanup(); return; }
+                        int h1 = HexVal(input[i + 1]);
+                        if (h1 == -1) { cleanup(); return; }
+                        int h2 = HexVal(input[i + 2]);
+                        if (h2 == -1) { cleanup(); return; }
+                        buf8[out_len++] = static_cast<char>((h1 << 4) | h2);
+                        i += 3;
+                        break;
+                    }
+                    case 'u': {
+                        if (i + 1 < end && input[i + 1] == '{') {
+                            size_t startHex = i + 2;
+                            uint32_t cp = 0;
+                            size_t k = startHex;
+                            for (; k < end; k++) {
+                                CharT ch = input[k];
+                                if (ch == '}') {
+                                    if (k == startHex) {
+                                        cleanup();
+                                        return;
+                                    }
+                                    if (cp <= 0xFF) {
+                                        buf8[out_len++] = static_cast<char>(cp);
+                                    } else if (cp <= 0xFFFF) {
+                                        if (!switchToTwoByte()) return;
+                                        buf16[out_len++] = static_cast<char16_t>(cp);
+                                    } else {
+                                        cp -= 0x10000;
+                                        if (!switchToTwoByte()) return;
+                                        buf16[out_len++] = static_cast<char16_t>(0xD800 + (cp >> 10));
+                                        buf16[out_len++] = static_cast<char16_t>(0xDC00 + (cp & 0x3FF));
+                                    }
+                                    i = k + 1;
+                                    break;
+                                }
+                                int hv = HexVal(ch);
+                                if (hv == -1) {
+                                    cleanup();
+                                    return;
+                                }
+                                cp = (cp << 4) | hv;
+                                if (cp > 0x10FFFF) {
+                                    cleanup();
+                                    return;
+                                }
+                            }
+                            if (k >= end) {
                                 cleanup();
                                 return;
                             }
-                            if (cp <= 0xFFFF) {
-                                if (!pushChar(static_cast<char16_t>(cp))) return;
-                            } else {
-                                cp -= 0x10000;
-                                if (is_one_byte && !switchToTwoByte()) return;
-                                buf16[out_len++] = static_cast<char16_t>(0xD800 + (cp >> 10));
-                                buf16[out_len++] = static_cast<char16_t>(0xDC00 + (cp & 0x3FF));
-                            }
-                            i = k + 1;
                             break;
                         }
-                        int hv = HexVal(ch);
-                        if (hv == -1) {
+                        if (i + 4 >= end) { cleanup(); return; }
+                        int h1 = HexVal(input[i + 1]);
+                        if (h1 == -1) { cleanup(); return; }
+                        int h2 = HexVal(input[i + 2]);
+                        if (h2 == -1) { cleanup(); return; }
+                        int h3 = HexVal(input[i + 3]);
+                        if (h3 == -1) { cleanup(); return; }
+                        int h4 = HexVal(input[i + 4]);
+                        if (h4 == -1) { cleanup(); return; }
+                        uint32_t cp = (h1 << 12) | (h2 << 8) | (h3 << 4) | h4;
+                        if (cp <= 0xFF) {
+                            buf8[out_len++] = static_cast<char>(cp);
+                        } else {
+                            if (!switchToTwoByte()) return;
+                            buf16[out_len++] = static_cast<char16_t>(cp);
+                        }
+                        i += 5;
+                        break;
+                    }
+                    case '\r': {
+                        if (++i < end && input[i] == '\n') i++;
+                        break;
+                    }
+                    case '\n':
+                    case 0x2028:
+                    case 0x2029: {
+                        i++;
+                        break;
+                    }
+                    default: {
+                        if (next >= '1' && next <= '9') {
                             cleanup();
                             return;
                         }
-                        cp = (cp << 4) | hv;
-                        if (cp > 0x10FFFF) {
+                        if (next <= 255) {
+                            buf8[out_len++] = static_cast<char>(next);
+                        } else {
+                            if (!switchToTwoByte()) return;
+                            buf16[out_len++] = static_cast<char16_t>(next);
+                        }
+                        i++;
+                        break;
+                    }
+                }
+            } else {
+                if (next < 256) {
+                    char esc = kSimpleEscapeTable[static_cast<uint8_t>(next)];
+                    if (esc != 0) {
+                        buf16[out_len++] = static_cast<char16_t>(static_cast<uint8_t>(esc));
+                        i++;
+                        continue;
+                    }
+                    if (next == '0') {
+                        if (i + 1 < end && input[i + 1] >= '0' && input[i + 1] <= '9') {
                             cleanup();
                             return;
                         }
+                        buf16[out_len++] = u'\0';
+                        i++;
+                        continue;
                     }
-                    if (k >= end) {
-                        cleanup();
-                        return;
+                }
+                switch (next) {
+                    case 'x': {
+                        if (i + 2 >= end) { cleanup(); return; }
+                        int h1 = HexVal(input[i + 1]);
+                        if (h1 == -1) { cleanup(); return; }
+                        int h2 = HexVal(input[i + 2]);
+                        if (h2 == -1) { cleanup(); return; }
+                        buf16[out_len++] = static_cast<char16_t>((h1 << 4) | h2);
+                        i += 3;
+                        break;
                     }
-                    break;
+                    case 'u': {
+                        if (i + 1 < end && input[i + 1] == '{') {
+                            size_t startHex = i + 2;
+                            uint32_t cp = 0;
+                            size_t k = startHex;
+                            for (; k < end; k++) {
+                                CharT ch = input[k];
+                                if (ch == '}') {
+                                    if (k == startHex) {
+                                        cleanup();
+                                        return;
+                                    }
+                                    if (cp <= 0xFFFF) {
+                                        buf16[out_len++] = static_cast<char16_t>(cp);
+                                    } else {
+                                        cp -= 0x10000;
+                                        buf16[out_len++] = static_cast<char16_t>(0xD800 + (cp >> 10));
+                                        buf16[out_len++] = static_cast<char16_t>(0xDC00 + (cp & 0x3FF));
+                                    }
+                                    i = k + 1;
+                                    break;
+                                }
+                                int hv = HexVal(ch);
+                                if (hv == -1) {
+                                    cleanup();
+                                    return;
+                                }
+                                cp = (cp << 4) | hv;
+                                if (cp > 0x10FFFF) {
+                                    cleanup();
+                                    return;
+                                }
+                            }
+                            if (k >= end) {
+                                cleanup();
+                                return;
+                            }
+                            break;
+                        }
+                        if (i + 4 >= end) { cleanup(); return; }
+                        int h1 = HexVal(input[i + 1]);
+                        if (h1 == -1) { cleanup(); return; }
+                        int h2 = HexVal(input[i + 2]);
+                        if (h2 == -1) { cleanup(); return; }
+                        int h3 = HexVal(input[i + 3]);
+                        if (h3 == -1) { cleanup(); return; }
+                        int h4 = HexVal(input[i + 4]);
+                        if (h4 == -1) { cleanup(); return; }
+                        buf16[out_len++] = static_cast<char16_t>((h1 << 12) | (h2 << 8) | (h3 << 4) | h4);
+                        i += 5;
+                        break;
+                    }
+                    case '\r': {
+                        if (++i < end && input[i] == '\n') i++;
+                        break;
+                    }
+                    case '\n':
+                    case 0x2028:
+                    case 0x2029: {
+                        i++;
+                        break;
+                    }
+                    default: {
+                        if (next >= '1' && next <= '9') {
+                            cleanup();
+                            return;
+                        }
+                        buf16[out_len++] = static_cast<char16_t>(next);
+                        i++;
+                        break;
+                    }
                 }
-                if (i + 4 >= end) { cleanup(); return; }
-                int h1 = HexVal(input[i + 1]);
-                if (h1 == -1) { cleanup(); return; }
-                int h2 = HexVal(input[i + 2]);
-                if (h2 == -1) { cleanup(); return; }
-                int h3 = HexVal(input[i + 3]);
-                if (h3 == -1) { cleanup(); return; }
-                int h4 = HexVal(input[i + 4]);
-                if (h4 == -1) { cleanup(); return; }
-                if (!pushChar(static_cast<char16_t>((h1 << 12) | (h2 << 8) | (h3 << 4) | h4))) return;
-                i += 5;
-                break;
             }
-            case '\r': {
-                if (++i < end && input[i] == '\n') i++;
-                break;
-            }
-            case '\n':
-            case 0x2028:
-            case 0x2029: {
+        } else if (c == '\r') {
+            if (i + 1 < end && input[i + 1] == '\n') {
                 i++;
-                break;
             }
-            default: {
-                if (next >= '1' && next <= '9') {
-                    cleanup();
-                    return;
-                }
-                if (!pushChar(static_cast<char16_t>(next))) return;
-                i++;
-                break;
+            if (is_one_byte) {
+                buf8[out_len++] = '\n';
+            } else {
+                buf16[out_len++] = u'\n';
             }
+            i++;
+        } else {
+            // c is '`' or '$' followed by '{'
+            cleanup();
+            return;
         }
     }
 
