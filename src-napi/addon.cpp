@@ -596,7 +596,11 @@ static Napi::Value Decode(const Napi::CallbackInfo& info) {
     size_t copied = 0;
     status = napi_get_value_string_latin1(env, str_val, buf, il + 1, &copied);
     NAPI_THROW_IF_FAILED(env, status, env.Null());
-    DecodeImpl(reinterpret_cast<const uint8_t*>(buf), il, out);
+    bool success = DecodeImpl(reinterpret_cast<const uint8_t*>(buf), il, out);
+    if (!success) {
+        Napi::SyntaxError::New(env, "decode: invalid input").ThrowAsJavaScriptException();
+        return env.Null();
+    }
     return Napi::Uint8Array::New(env, out_len, ab, 0);
 }
 
