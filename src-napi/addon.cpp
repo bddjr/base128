@@ -661,7 +661,71 @@ static inline char* EscapeBytesToTemplateLiterals(const char* src, size_t len, s
     char* dst = out_buf;
     *dst++ = '`';
 
+    size_t start = 0;
     size_t i = 0;
+
+    auto emit_plain = [&](size_t pos) -> bool {
+        size_t plain = pos - start;
+        if (plain > 0) {
+            if (static_cast<size_t>(dst - out_buf) + plain + 32 > cap) {
+                size_t off = dst - out_buf;
+                cap = cap * 2 + plain + 128;
+                char* nb = static_cast<char*>(std::realloc(out_buf, cap));
+                if (!nb) { std::free(out_buf); return false; }
+                out_buf = nb;
+                dst = out_buf + off;
+            }
+            std::memcpy(dst, src + start, plain);
+            dst += plain;
+        }
+        return true;
+    };
+
+    auto handle_escape = [&](size_t pos, char c) -> bool {
+        if (c == '$') {
+            if (pos + 1 < len && src[pos + 1] == '{') {
+                if (!emit_plain(pos)) return false;
+                std::memcpy(dst, "\\${", 3);
+                dst += 3;
+                start = pos + 2;
+            }
+        } else if (c == '<') {
+            if (IsCloseScriptTag(src, pos, len)) {
+                if (!emit_plain(pos)) return false;
+                std::memcpy(dst, "<\\/", 3);
+                std::memcpy(dst + 3, src + pos + 2, 6);
+                dst += 9;
+                start = pos + 8;
+            }
+        } else {
+            if (!emit_plain(pos)) return false;
+            if (c == '\r') {
+                std::memcpy(dst, "\\r", 2);
+                dst += 2;
+                start = pos + 1;
+            } else if (c == '\\') {
+                std::memcpy(dst, "\\\\", 2);
+                dst += 2;
+                start = pos + 1;
+            } else if (c == '`') {
+                std::memcpy(dst, "\\`", 2);
+                dst += 2;
+                start = pos + 1;
+            } else /* c == '\0' */ {
+                if (pos + 1 < len && src[pos + 1] >= '0' && src[pos + 1] <= '9') {
+                    std::memcpy(dst, "\\x00", 4);
+                    dst[4] = src[pos + 1];
+                    dst += 5;
+                    start = pos + 2;
+                } else {
+                    std::memcpy(dst, "\\0", 2);
+                    dst += 2;
+                    start = pos + 1;
+                }
+            }
+        }
+        return true;
+    };
 
 #if defined(__x86_64__) || defined(_M_X64)
     const __m128i v0  = _mm_set1_epi8(0);
@@ -670,6 +734,33 @@ static inline char* EscapeBytesToTemplateLiterals(const char* src, size_t len, s
     const __m128i v60 = _mm_set1_epi8(60);
     const __m128i v92 = _mm_set1_epi8(92);
     const __m128i v96 = _mm_set1_epi8(96);
+
+    while (i + 16 <= len) {
+        __m128i v = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src + i));
+        __m128i m0  = _mm_cmpeq_epi8(v, v0);
+        __m128i m13 = _mm_cmpeq_epi8(v, v13);
+        __m128i m36 = _mm_cmpeq_epi8(v, v36);
+        __m128i m60 = _mm_cmpeq_epi8(v, v60);
+        __m128i m92 = _mm_cmpeq_epi8(v, v92);
+        __m128i m96 = _mm_cmpeq_epi8(v, v96);
+        __m128i any = _mm_or_si128(_mm_or_si128(m0, m13),
+                      _mm_or_si128(_mm_or_si128(m36, m60), _mm_or_si128(m92, m96)));
+        int mask = _mm_movemask_epi8(any);
+        while (mask != 0) {
+#if defined(_MSC_VER)
+            unsigned long offset;
+            _BitScanForward(&offset, mask);
+#else
+            unsigned long offset = __builtin_ctz(mask);
+#endif
+            size_t pos = i + offset;
+            if (pos >= start) {
+                if (!handle_escape(pos, src[pos])) return nullptr;
+            }
+            mask &= mask - 1;
+        }
+        i += 16;
+    }
 #elif defined(__aarch64__) || defined(_M_ARM64)
     const uint8x16_t v0  = vdupq_n_u8(0);
     const uint8x16_t v13 = vdupq_n_u8(13);
@@ -677,6 +768,47 @@ static inline char* EscapeBytesToTemplateLiterals(const char* src, size_t len, s
     const uint8x16_t v60 = vdupq_n_u8(60);
     const uint8x16_t v92 = vdupq_n_u8(92);
     const uint8x16_t v96 = vdupq_n_u8(96);
+
+    while (i + 16 <= len) {
+        uint8x16_t v = vld1q_u8(reinterpret_cast<const uint8_t*>(src + i));
+        uint8x16_t m0  = vceqq_u8(v, v0);
+        uint8x16_t m13 = vceqq_u8(v, v13);
+        uint8x16_t m36 = vceqq_u8(v, v36);
+        uint8x16_t m60 = vceqq_u8(v, v60);
+        uint8x16_t m92 = vceqq_u8(v, v92);
+        uint8x16_t m96 = vceqq_u8(v, v96);
+        uint8x16_t any = vorrq_u8(vorrq_u8(m0, m13),
+                         vorrq_u8(vorrq_u8(m36, m60), vorrq_u8(m92, m96)));
+        uint64_t lo = vgetq_lane_u64(vreinterpretq_u64_u8(any), 0);
+        uint64_t hi = vgetq_lane_u64(vreinterpretq_u64_u8(any), 1);
+        while (lo != 0) {
+#if defined(_MSC_VER)
+            unsigned long offset;
+            _BitScanForward64(&offset, lo);
+#else
+            unsigned long offset = __builtin_ctzll(lo);
+#endif
+            size_t pos = i + (offset >> 3);
+            if (pos >= start) {
+                if (!handle_escape(pos, src[pos])) return nullptr;
+            }
+            lo &= ~(0xFFULL << (offset & ~7ULL));
+        }
+        while (hi != 0) {
+#if defined(_MSC_VER)
+            unsigned long offset;
+            _BitScanForward64(&offset, hi);
+#else
+            unsigned long offset = __builtin_ctzll(hi);
+#endif
+            size_t pos = i + 8 + (offset >> 3);
+            if (pos >= start) {
+                if (!handle_escape(pos, src[pos])) return nullptr;
+            }
+            hi &= ~(0xFFULL << (offset & ~7ULL));
+        }
+        i += 16;
+    }
 #elif (defined(__PPC64__) || defined(__ppc64__) || defined(_ARCH_PPC64)) && defined(__ALTIVEC__)
     const __vector unsigned char v0  = vec_splats(static_cast<unsigned char>(0));
     const __vector unsigned char v13 = vec_splats(static_cast<unsigned char>(13));
@@ -684,313 +816,72 @@ static inline char* EscapeBytesToTemplateLiterals(const char* src, size_t len, s
     const __vector unsigned char v60 = vec_splats(static_cast<unsigned char>(60));
     const __vector unsigned char v92 = vec_splats(static_cast<unsigned char>(92));
     const __vector unsigned char v96 = vec_splats(static_cast<unsigned char>(96));
-    const __vector unsigned char zero = vec_splats(static_cast<unsigned char>(0));
+
+    while (i + 16 <= len) {
+        __vector unsigned char v = vec_xl(0, reinterpret_cast<const unsigned char*>(src + i));
+        auto m0  = vec_cmpeq(v, v0);
+        auto m13 = vec_cmpeq(v, v13);
+        auto m36 = vec_cmpeq(v, v36);
+        auto m60 = vec_cmpeq(v, v60);
+        auto m92 = vec_cmpeq(v, v92);
+        auto m96 = vec_cmpeq(v, v96);
+        auto any = vec_or(vec_or(m0, m13),
+                         vec_or(vec_or(m36, m60), vec_or(m92, m96)));
+#if defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
+        uint64_t lo = vec_extract(((__vector unsigned long long)any), 0);
+        uint64_t hi = vec_extract(((__vector unsigned long long)any), 1);
+        while (lo != 0) {
+            unsigned long offset = __builtin_ctzll(lo);
+            size_t pos = i + (offset >> 3);
+            if (pos >= start) {
+                if (!handle_escape(pos, src[pos])) return nullptr;
+            }
+            lo &= ~(0xFFULL << (offset & ~7ULL));
+        }
+        while (hi != 0) {
+            unsigned long offset = __builtin_ctzll(hi);
+            size_t pos = i + 8 + (offset >> 3);
+            if (pos >= start) {
+                if (!handle_escape(pos, src[pos])) return nullptr;
+            }
+            hi &= ~(0xFFULL << (offset & ~7ULL));
+        }
+#else
+        uint64_t hi = vec_extract(((__vector unsigned long long)any), 0);
+        uint64_t lo = vec_extract(((__vector unsigned long long)any), 1);
+        while (hi != 0) {
+            unsigned long offset = __builtin_clzll(hi);
+            size_t pos = i + (offset >> 3);
+            if (pos >= start) {
+                if (!handle_escape(pos, src[pos])) return nullptr;
+            }
+            hi &= ~(0xFF00000000000000ULL >> (offset & ~7ULL));
+        }
+        while (lo != 0) {
+            unsigned long offset = __builtin_clzll(lo);
+            size_t pos = i + 8 + (offset >> 3);
+            if (pos >= start) {
+                if (!handle_escape(pos, src[pos])) return nullptr;
+            }
+            lo &= ~(0xFF00000000000000ULL >> (offset & ~7ULL));
+        }
+#endif
+        i += 16;
+    }
 #endif
 
     while (i < len) {
-        size_t start = i;
-
-#if defined(__x86_64__) || defined(_M_X64)
-        while (i + 16 <= len) {
-            __m128i v = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src + i));
-            __m128i m0  = _mm_cmpeq_epi8(v, v0);
-            __m128i m13 = _mm_cmpeq_epi8(v, v13);
-            __m128i m36 = _mm_cmpeq_epi8(v, v36);
-            __m128i m60 = _mm_cmpeq_epi8(v, v60);
-            __m128i m92 = _mm_cmpeq_epi8(v, v92);
-            __m128i m96 = _mm_cmpeq_epi8(v, v96);
-            __m128i any = _mm_or_si128(_mm_or_si128(m0, m13),
-                          _mm_or_si128(_mm_or_si128(m36, m60), _mm_or_si128(m92, m96)));
-            int mask = _mm_movemask_epi8(any);
-            if (mask != 0) {
-                bool found_escape = false;
-                while (mask != 0) {
-#if defined(_MSC_VER)
-                    unsigned long offset;
-                    _BitScanForward(&offset, mask);
-#else
-                    unsigned long offset = __builtin_ctz(mask);
-#endif
-                    size_t pos = i + offset;
-                    char c = src[pos];
-                    if (c == '$') {
-                        if (pos + 1 < len && src[pos + 1] == '{') {
-                            i = pos;
-                            found_escape = true;
-                            break;
-                        }
-                    } else if (c == '<') {
-                        if (IsCloseScriptTag(src, pos, len)) {
-                            i = pos;
-                            found_escape = true;
-                            break;
-                        }
-                    } else {
-                        i = pos;
-                        found_escape = true;
-                        break;
-                    }
-                    mask &= mask - 1;
-                }
-                if (found_escape) break;
-            }
-            i += 16;
-        }
-#elif defined(__aarch64__) || defined(_M_ARM64)
-        while (i + 16 <= len) {
-            uint8x16_t v = vld1q_u8(reinterpret_cast<const uint8_t*>(src + i));
-            uint8x16_t m0  = vceqq_u8(v, v0);
-            uint8x16_t m13 = vceqq_u8(v, v13);
-            uint8x16_t m36 = vceqq_u8(v, v36);
-            uint8x16_t m60 = vceqq_u8(v, v60);
-            uint8x16_t m92 = vceqq_u8(v, v92);
-            uint8x16_t m96 = vceqq_u8(v, v96);
-            uint8x16_t any = vorrq_u8(vorrq_u8(m0, m13),
-                             vorrq_u8(vorrq_u8(m36, m60), vorrq_u8(m92, m96)));
-            uint64_t lo = vgetq_lane_u64(vreinterpretq_u64_u8(any), 0);
-            uint64_t hi = vgetq_lane_u64(vreinterpretq_u64_u8(any), 1);
-            if ((lo | hi) != 0) {
-                bool found_escape = false;
-                while (lo != 0) {
-#if defined(_MSC_VER)
-                    unsigned long offset;
-                    _BitScanForward64(&offset, lo);
-#else
-                    unsigned long offset = __builtin_ctzll(lo);
-#endif
-                    size_t pos = i + (offset >> 3);
-                    char c = src[pos];
-                    if (c == '$') {
-                        if (pos + 1 < len && src[pos + 1] == '{') {
-                            i = pos;
-                            found_escape = true;
-                            break;
-                        }
-                    } else if (c == '<') {
-                        if (IsCloseScriptTag(src, pos, len)) {
-                            i = pos;
-                            found_escape = true;
-                            break;
-                        }
-                    } else {
-                        i = pos;
-                        found_escape = true;
-                        break;
-                    }
-                    lo &= ~(0xFFULL << (offset & ~7ULL));
-                }
-                if (found_escape) break;
-
-                while (hi != 0) {
-#if defined(_MSC_VER)
-                    unsigned long offset;
-                    _BitScanForward64(&offset, hi);
-#else
-                    unsigned long offset = __builtin_ctzll(hi);
-#endif
-                    size_t pos = i + 8 + (offset >> 3);
-                    char c = src[pos];
-                    if (c == '$') {
-                        if (pos + 1 < len && src[pos + 1] == '{') {
-                            i = pos;
-                            found_escape = true;
-                            break;
-                        }
-                    } else if (c == '<') {
-                        if (IsCloseScriptTag(src, pos, len)) {
-                            i = pos;
-                            found_escape = true;
-                            break;
-                        }
-                    } else {
-                        i = pos;
-                        found_escape = true;
-                        break;
-                    }
-                    hi &= ~(0xFFULL << (offset & ~7ULL));
-                }
-                if (found_escape) break;
-            }
-            i += 16;
-        }
-#elif (defined(__PPC64__) || defined(__ppc64__) || defined(_ARCH_PPC64)) && defined(__ALTIVEC__)
-        while (i + 16 <= len) {
-            __vector unsigned char v = vec_xl(0, reinterpret_cast<const unsigned char*>(src + i));
-            auto m0  = vec_cmpeq(v, v0);
-            auto m13 = vec_cmpeq(v, v13);
-            auto m36 = vec_cmpeq(v, v36);
-            auto m60 = vec_cmpeq(v, v60);
-            auto m92 = vec_cmpeq(v, v92);
-            auto m96 = vec_cmpeq(v, v96);
-            auto any = vec_or(vec_or(m0, m13),
-                             vec_or(vec_or(m36, m60), vec_or(m92, m96)));
-            if (vec_any_ne(((__vector unsigned char)any), zero)) {
-                bool found_escape = false;
-#if defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
-                uint64_t lo = vec_extract(((__vector unsigned long long)any), 0);
-                uint64_t hi = vec_extract(((__vector unsigned long long)any), 1);
-                while (lo != 0) {
-                    unsigned long offset = __builtin_ctzll(lo);
-                    size_t pos = i + (offset >> 3);
-                    char c = src[pos];
-                    if (c == '$') {
-                        if (pos + 1 < len && src[pos + 1] == '{') {
-                            i = pos; found_escape = true; break;
-                        }
-                    } else if (c == '<') {
-                        if (IsCloseScriptTag(src, pos, len)) {
-                            i = pos; found_escape = true; break;
-                        }
-                    } else {
-                        i = pos; found_escape = true; break;
-                    }
-                    lo &= ~(0xFFULL << (offset & ~7ULL));
-                }
-                if (found_escape) break;
-
-                while (hi != 0) {
-                    unsigned long offset = __builtin_ctzll(hi);
-                    size_t pos = i + 8 + (offset >> 3);
-                    char c = src[pos];
-                    if (c == '$') {
-                        if (pos + 1 < len && src[pos + 1] == '{') {
-                            i = pos; found_escape = true; break;
-                        }
-                    } else if (c == '<') {
-                        if (IsCloseScriptTag(src, pos, len)) {
-                            i = pos; found_escape = true; break;
-                        }
-                    } else {
-                        i = pos; found_escape = true; break;
-                    }
-                    hi &= ~(0xFFULL << (offset & ~7ULL));
-                }
-                if (found_escape) break;
-#else
-                uint64_t hi = vec_extract(((__vector unsigned long long)any), 0);
-                uint64_t lo = vec_extract(((__vector unsigned long long)any), 1);
-                while (hi != 0) {
-                    unsigned long offset = __builtin_clzll(hi);
-                    size_t pos = i + (offset >> 3);
-                    char c = src[pos];
-                    if (c == '$') {
-                        if (pos + 1 < len && src[pos + 1] == '{') {
-                            i = pos; found_escape = true; break;
-                        }
-                    } else if (c == '<') {
-                        if (IsCloseScriptTag(src, pos, len)) {
-                            i = pos; found_escape = true; break;
-                        }
-                    } else {
-                        i = pos; found_escape = true; break;
-                    }
-                    hi &= ~(0xFF00000000000000ULL >> (offset & ~7ULL));
-                }
-                if (found_escape) break;
-
-                while (lo != 0) {
-                    unsigned long offset = __builtin_clzll(lo);
-                    size_t pos = i + 8 + (offset >> 3);
-                    char c = src[pos];
-                    if (c == '$') {
-                        if (pos + 1 < len && src[pos + 1] == '{') {
-                            i = pos; found_escape = true; break;
-                        }
-                    } else if (c == '<') {
-                        if (IsCloseScriptTag(src, pos, len)) {
-                            i = pos; found_escape = true; break;
-                        }
-                    } else {
-                        i = pos; found_escape = true; break;
-                    }
-                    lo &= ~(0xFF00000000000000ULL >> (offset & ~7ULL));
-                }
-                if (found_escape) break;
-#endif
-            }
-            i += 16;
-        }
-#endif
-
-        while (i < len) {
+        if (i >= start) {
             char c = src[i];
             if (kIsSpecialChar[static_cast<uint8_t>(c)]) {
-                if (c == '$') {
-                    if (i + 1 < len && src[i + 1] == '{') break;
-                } else if (c == '<') {
-                    if (IsCloseScriptTag(src, i, len)) break;
-                } else {
-                    break;
-                }
+                if (!handle_escape(i, c)) return nullptr;
             }
-            i++;
         }
-
-        size_t chunk_len = i - start;
-        if (chunk_len > 0) {
-            if (static_cast<size_t>(dst - out_buf) + chunk_len + 32 > cap) {
-                size_t offset = dst - out_buf;
-                cap = cap * 2 + chunk_len + 128;
-                char* nb = static_cast<char*>(std::realloc(out_buf, cap));
-                if (!nb) { std::free(out_buf); return nullptr; }
-                out_buf = nb;
-                dst = out_buf + offset;
-            }
-            std::memcpy(dst, src + start, chunk_len);
-            dst += chunk_len;
-        }
-        if (i >= len) break;
-
-        if (static_cast<size_t>(dst - out_buf) + 16 > cap) {
-            size_t offset = dst - out_buf;
-            cap = cap * 2 + 128;
-            char* nb = static_cast<char*>(std::realloc(out_buf, cap));
-            if (!nb) { std::free(out_buf); return nullptr; }
-            out_buf = nb;
-            dst = out_buf + offset;
-        }
-
-        char c = src[i];
-        switch (c) {
-            case '\r':
-                *dst++ = '\\'; *dst++ = 'r'; i++; break;
-            case '\\':
-                *dst++ = '\\'; *dst++ = '\\'; i++; break;
-            case '`':
-                *dst++ = '\\'; *dst++ = '`'; i++; break;
-            case '\0':
-                if (i + 1 < len && src[i + 1] >= '0' && src[i + 1] <= '9') {
-                    *dst++ = '\\'; *dst++ = 'x'; *dst++ = '0'; *dst++ = '0';
-                    *dst++ = static_cast<char>(src[i + 1]);
-                    i += 2;
-                } else {
-                    *dst++ = '\\'; *dst++ = '0'; i++;
-                }
-                break;
-            case '$':
-                if (i + 1 < len && src[i + 1] == '{') {
-                    *dst++ = '\\'; *dst++ = '$'; *dst++ = '{';
-                    i += 2;
-                } else {
-                    *dst++ = '$'; i++;
-                }
-                break;
-            case '<':
-                if (IsCloseScriptTag(src, i, len)) {
-                    *dst++ = '<';
-                    *dst++ = '\\';
-                    *dst++ = '/';
-                    std::memcpy(dst, src + i + 2, 6);
-                    dst += 6;
-                    i += 8;
-                } else {
-                    *dst++ = '<'; i++;
-                }
-                break;
-            default:
-                *dst++ = c; i++; break;
-        }
+        i++;
     }
+
+    if (!emit_plain(len)) return nullptr;
+
     if (static_cast<size_t>(dst - out_buf) + 2 > cap) {
         size_t offset = dst - out_buf;
         cap += 16;
