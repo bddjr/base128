@@ -530,10 +530,15 @@ static Napi::Value Decode(const Napi::CallbackInfo& info) {
     size_t rem;
     size_t out_len;
 
-    auto updateOutLen = [&utf16_len, &full_chunks, &rem, &out_len]() {
+    auto ThrowSyntaxError = [&env]() {
+        Napi::SyntaxError::New(env, "decode: invalid input").ThrowAsJavaScriptException();
+        return env.Null();
+    };
+
+    auto newAB = [&env, &utf16_len, &full_chunks, &rem, &out_len]() {
         full_chunks = utf16_len / 8;
-        rem = utf16_len & 7;
         out_len = utf16_len - full_chunks - (rem != 0);
+        return Napi::ArrayBuffer::New(env, out_len);
     };
 
 #ifdef USE_V8_ACCELERATION
@@ -543,8 +548,9 @@ static Napi::Value Decode(const Napi::CallbackInfo& info) {
         if (v8_val->IsString()) {
             v8::Local<v8::String> v8_str = v8_val.As<v8::String>();
             utf16_len = v8_str->Length();
-            updateOutLen();
-            Napi::ArrayBuffer ab = Napi::ArrayBuffer::New(env, out_len);
+            rem = utf16_len & 7;
+            if (rem == 1) return ThrowSyntaxError();
+            Napi::ArrayBuffer ab = newAB();
             if (env.IsExceptionPending()) return env.Null();
             uint8_t* out = reinterpret_cast<uint8_t*>(ab.Data());
             bool success = false;
@@ -556,10 +562,7 @@ static Napi::Value Decode(const Napi::CallbackInfo& info) {
                     success = DecodeImpl(reinterpret_cast<const char16_t*>(view.data16()), full_chunks, rem, out);
                 }
             }
-            if (!success) {
-                Napi::SyntaxError::New(env, "decode: invalid input").ThrowAsJavaScriptException();
-                return env.Null();
-            }
+            if (!success) return ThrowSyntaxError();
             return Napi::Uint8Array::New(env, out_len, ab, 0);
         }
     }
@@ -577,8 +580,10 @@ static Napi::Value Decode(const Napi::CallbackInfo& info) {
         return env.Null();
     }
 
-    updateOutLen();
-    Napi::ArrayBuffer ab = Napi::ArrayBuffer::New(env, out_len);
+    rem = utf16_len & 7;
+    if (rem == 1) return ThrowSyntaxError();
+
+    Napi::ArrayBuffer ab = newAB();
     if (env.IsExceptionPending()) return env.Null();
     uint8_t* out = reinterpret_cast<uint8_t*>(ab.Data());
 
@@ -598,10 +603,7 @@ static Napi::Value Decode(const Napi::CallbackInfo& info) {
     status = napi_get_value_string_latin1(env, str_val, buf, utf16_len + 1, &copied);
     NAPI_THROW_IF_FAILED(env, status, env.Null());
     bool success = DecodeImpl(reinterpret_cast<const uint8_t*>(buf), full_chunks, rem, out);
-    if (!success) {
-        Napi::SyntaxError::New(env, "decode: invalid input").ThrowAsJavaScriptException();
-        return env.Null();
-    }
+    if (!success) return ThrowSyntaxError();
     return Napi::Uint8Array::New(env, out_len, ab, 0);
 }
 

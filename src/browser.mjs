@@ -105,7 +105,8 @@ export function decode(input) {
     const errInvalidInput = `decode: invalid input`
         , il = input.length
         , rem = il & 7
-        , limit = il - rem
+    if (rem === 1) throw SyntaxError(errInvalidInput)
+    const limit = il - rem
         , out = new Uint8Array(il - (limit / 8) - /**@type {*}*/(!!rem))
     var ii = 0
         , oi = 0
