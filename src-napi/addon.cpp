@@ -306,7 +306,8 @@ static Napi::Value Encode(const Napi::CallbackInfo& info) {
     }
     void* in_ptr = nullptr;
     size_t il = 0;
-    napi_get_typedarray_info(env, info[0], nullptr, &il, &in_ptr, nullptr, nullptr);
+    napi_status status = napi_get_typedarray_info(env, info[0], nullptr, &il, &in_ptr, nullptr, nullptr);
+    NAPI_THROW_IF_FAILED(env, status, env.Null());
     const uint8_t* in = static_cast<const uint8_t*>(in_ptr);
 
     size_t rem = il % 7;
@@ -503,7 +504,8 @@ static Napi::Value Decode(const Napi::CallbackInfo& info) {
         v8::Local<v8::Value> v8_val = *reinterpret_cast<v8::Local<v8::Value>*>(&str_val);
         if (v8_val->IsString()) {
             size_t il = 0;
-            napi_get_value_string_utf16(env, str_val, nullptr, 0, &il);
+            napi_status status = napi_get_value_string_utf16(env, str_val, nullptr, 0, &il);
+            NAPI_THROW_IF_FAILED(env, status, env.Null());
             size_t out_len = (il / 8) * 7 + ((il & 7) * 7) / 8;
             Napi::ArrayBuffer ab = Napi::ArrayBuffer::New(env, out_len);
             if (env.IsExceptionPending() || ab.IsEmpty() || (out_len > 0 && !ab.Data())) return env.Null();
@@ -528,10 +530,12 @@ static Napi::Value Decode(const Napi::CallbackInfo& info) {
 #endif
 
     size_t utf16_len = 0;
-    napi_get_value_string_utf16(env, str_val, nullptr, 0, &utf16_len);
+    napi_status status = napi_get_value_string_utf16(env, str_val, nullptr, 0, &utf16_len);
+    NAPI_THROW_IF_FAILED(env, status, env.Null());
 
     size_t utf8_len = 0;
-    napi_get_value_string_utf8(env, str_val, nullptr, 0, &utf8_len);
+    status = napi_get_value_string_utf8(env, str_val, nullptr, 0, &utf8_len);
+    NAPI_THROW_IF_FAILED(env, status, env.Null());
 
     if (utf8_len != utf16_len) {
         Napi::SyntaxError::New(env, "decode: invalid input").ThrowAsJavaScriptException();
@@ -557,7 +561,8 @@ static Napi::Value Decode(const Napi::CallbackInfo& info) {
         buf = heap_buf.data();
     }
     size_t copied = 0;
-    napi_get_value_string_latin1(env, str_val, buf, il + 1, &copied);
+    status = napi_get_value_string_latin1(env, str_val, buf, il + 1, &copied);
+    NAPI_THROW_IF_FAILED(env, status, env.Null());
     DecodeImpl(reinterpret_cast<const uint8_t*>(buf), il, out);
     return Napi::Uint8Array::New(env, out_len, ab, 0);
 }
@@ -1838,10 +1843,12 @@ static Napi::Value ParseJSTemplateLiterals(const Napi::CallbackInfo& info) {
 
     {
         size_t utf16_len = 0;
-        napi_get_value_string_utf16(env, str_val, nullptr, 0, &utf16_len);
+        napi_status status = napi_get_value_string_utf16(env, str_val, nullptr, 0, &utf16_len);
+        NAPI_THROW_IF_FAILED(env, status, env.Null());
 
         size_t utf8_len = 0;
-        napi_get_value_string_utf8(env, str_val, nullptr, 0, &utf8_len);
+        status = napi_get_value_string_utf8(env, str_val, nullptr, 0, &utf8_len);
+        NAPI_THROW_IF_FAILED(env, status, env.Null());
 
         if (utf8_len == utf16_len) {
             constexpr size_t kStackCap = 1024;
@@ -1853,7 +1860,8 @@ static Napi::Value ParseJSTemplateLiterals(const Napi::CallbackInfo& info) {
                 buf = heap_buf.data();
             }
             size_t copied = 0;
-            napi_get_value_string_latin1(env, str_val, buf, utf16_len + 1, &copied);
+            status = napi_get_value_string_latin1(env, str_val, buf, utf16_len + 1, &copied);
+            NAPI_THROW_IF_FAILED(env, status, env.Null());
             ParseJSTemplateLiteralsImpl(reinterpret_cast<const uint8_t*>(buf), utf16_len, res);
         } else {
             constexpr size_t kStackCap16 = 512;
@@ -1865,7 +1873,8 @@ static Napi::Value ParseJSTemplateLiterals(const Napi::CallbackInfo& info) {
                 buf16 = heap_buf16.data();
             }
             size_t copied = 0;
-            napi_get_value_string_utf16(env, str_val, buf16, utf16_len + 1, &copied);
+            status = napi_get_value_string_utf16(env, str_val, buf16, utf16_len + 1, &copied);
+            NAPI_THROW_IF_FAILED(env, status, env.Null());
             ParseJSTemplateLiteralsImpl(reinterpret_cast<const char16_t*>(buf16), utf16_len, res);
         }
     }
