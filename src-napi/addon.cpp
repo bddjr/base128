@@ -133,11 +133,12 @@ static void EncodeLoop_BMI2(const uint8_t* src, uint8_t* dst, size_t full_chunks
 #if defined(__GNUC__) || defined(__clang__)
 __attribute__((target("bmi2")))
 #endif
-static void DecodeLoop_BMI2(const uint8_t* in, uint8_t* out, size_t full_chunks) {
+static bool DecodeLoop_BMI2(const uint8_t* in, uint8_t* out, size_t full_chunks) {
     size_t c = 0;
     for (; c + 1 < full_chunks; c++, in += 8, out += 7) {
         uint64_t v;
         std::memcpy(&v, in, 8);
+        if (v & 0x8080808080808080ULL) return false;
         uint64_t src_56 = _pext_u64(BSwap64(v), 0x7F7F7F7F7F7F7F7FULL);
         uint64_t out_val = BSwap64(src_56 << 8);
         std::memcpy(out, &out_val, 8);
@@ -145,10 +146,12 @@ static void DecodeLoop_BMI2(const uint8_t* in, uint8_t* out, size_t full_chunks)
     if (c < full_chunks) {
         uint64_t v;
         std::memcpy(&v, in, 8);
+        if (v & 0x8080808080808080ULL) return false;
         uint64_t src_56 = _pext_u64(BSwap64(v), 0x7F7F7F7F7F7F7F7FULL);
         uint64_t out_val = BSwap64(src_56 << 8);
         std::memcpy(out, &out_val, 7);
     }
+    return true;
 }
 #endif
 
@@ -164,7 +167,7 @@ static inline void Encode7to8_SWAR(const uint8_t* src, uint8_t* dst, bool can_re
 }
 
 static inline void Decode8to7_SWAR_FromVal(uint64_t v, uint8_t* out, bool can_write_8) {
-    uint64_t x = ToBE64(v) & 0x7F7F7F7F7F7F7F7FULL;
+    uint64_t x = ToBE64(v);
     x = ((x & 0x7F007F007F007F00ULL) >> 1) | (x & 0x007F007F007F007FULL);
     x = ((x & 0x3FFF00003FFF0000ULL) >> 2) | (x & 0x00003FFF00003FFFULL);
     uint64_t src_56 = ((x & 0x0FFFFFFF00000000ULL) >> 4) | (x & 0x000000000FFFFFFFULL);
@@ -172,40 +175,44 @@ static inline void Decode8to7_SWAR_FromVal(uint64_t v, uint8_t* out, bool can_wr
     std::memcpy(out, &out_val, can_write_8 ? 8 : 7);
 }
 
-static inline void Decode8to7_SWAR(const uint8_t* in, uint8_t* out, bool can_write_8) {
+static inline bool Decode8to7_SWAR(const uint8_t* in, uint8_t* out, bool can_write_8) {
     uint64_t v;
     std::memcpy(&v, in, 8);
+    if (v & 0x8080808080808080ULL) return false;
     Decode8to7_SWAR_FromVal(v, out, can_write_8);
+    return true;
 }
 
-static inline uint64_t Pack8Char16To8Uint8(const char16_t* in) {
+static inline bool Pack8Char16To8Uint8(const char16_t* in, uint64_t& out_v) {
     uint64_t w0, w1;
     std::memcpy(&w0, in, 8);
     std::memcpy(&w1, in + 4, 8);
+    if ((w0 | w1) & 0xFF80FF80FF80FF80ULL) return false;
 #if defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
     auto pack4 = [](uint64_t w) -> uint32_t {
-        w &= 0x007F007F007F007FULL;
         w = (w | (w << 8)) & 0x7F7F00007F7F0000ULL;
         return static_cast<uint32_t>((w | (w << 16)) >> 32);
     };
     uint32_t p0 = pack4(w0);
     uint32_t p1 = pack4(w1);
-    return (static_cast<uint64_t>(p0) << 32) | p1;
+    out_v = (static_cast<uint64_t>(p0) << 32) | p1;
 #else
     auto pack4 = [](uint64_t w) -> uint32_t {
-        w &= 0x007F007F007F007FULL;
         w = (w | (w >> 8)) & 0x00007F7F00007F7FULL;
         return static_cast<uint32_t>(w | (w >> 16));
     };
     uint32_t p0 = pack4(w0);
     uint32_t p1 = pack4(w1);
-    return (static_cast<uint64_t>(p1) << 32) | p0;
+    out_v = (static_cast<uint64_t>(p1) << 32) | p0;
 #endif
+    return true;
 }
 
-static inline void Decode8to7_Char16(const char16_t* in, uint8_t* out, bool can_write_8) {
-    uint64_t v = Pack8Char16To8Uint8(in);
+static inline bool Decode8to7_Char16(const char16_t* in, uint8_t* out, bool can_write_8) {
+    uint64_t v;
+    if (!Pack8Char16To8Uint8(in, v)) return false;
     Decode8to7_SWAR_FromVal(v, out, can_write_8);
+    return true;
 }
 
 static void EncodeLoop_SWAR(const uint8_t* src, uint8_t* dst, size_t full_chunks) {
@@ -218,14 +225,15 @@ static void EncodeLoop_SWAR(const uint8_t* src, uint8_t* dst, size_t full_chunks
     }
 }
 
-static void DecodeLoop_SWAR(const uint8_t* in, uint8_t* out, size_t full_chunks) {
+static bool DecodeLoop_SWAR(const uint8_t* in, uint8_t* out, size_t full_chunks) {
     size_t c = 0;
     for (; c + 1 < full_chunks; c++, in += 8, out += 7) {
-        Decode8to7_SWAR(in, out, true);
+        if (!Decode8to7_SWAR(in, out, true)) return false;
     }
     if (c < full_chunks) {
-        Decode8to7_SWAR(in, out, false);
+        if (!Decode8to7_SWAR(in, out, false)) return false;
     }
+    return true;
 }
 
 static inline void Widen8To16(const uint8_t* src, char16_t* dst, size_t len) {
@@ -1177,44 +1185,55 @@ static Napi::Value Encode(const Napi::CallbackInfo& info) {
 }
 
 template <UnsignedChar CharT>
-static inline void DecodeImpl(const CharT* in, size_t il, uint8_t* out) {
+static inline bool DecodeImpl(const CharT* in, size_t il, uint8_t* out) {
     size_t full_chunks = il / 8;
 
     if constexpr (sizeof(CharT) == 1) {
 #if defined(__x86_64__) || defined(_M_X64)
         if (CpuHasFastBMI2()) {
-            DecodeLoop_BMI2(reinterpret_cast<const uint8_t*>(in), out, full_chunks);
+            if (!DecodeLoop_BMI2(reinterpret_cast<const uint8_t*>(in), out, full_chunks)) {
+                return false;
+            }
         } else
 #endif
         {
-            DecodeLoop_SWAR(reinterpret_cast<const uint8_t*>(in), out, full_chunks);
+            if (!DecodeLoop_SWAR(reinterpret_cast<const uint8_t*>(in), out, full_chunks)) {
+                return false;
+            }
         }
     } else {
         size_t c = 0;
         const char16_t* in16 = reinterpret_cast<const char16_t*>(in);
         uint8_t* out_curr = out;
         for (; c + 1 < full_chunks; c++, in16 += 8, out_curr += 7) {
-            Decode8to7_Char16(in16, out_curr, true);
+            if (!Decode8to7_Char16(in16, out_curr, true)) return false;
         }
         if (c < full_chunks) {
-            Decode8to7_Char16(in16, out_curr, false);
+            if (!Decode8to7_Char16(in16, out_curr, false)) return false;
         }
     }
 
     size_t rem = il - (full_chunks * 8);
-    if (rem > 1) {
+    if (rem) {
         const CharT* in_rem = in + (full_chunks * 8);
-        uint8_t* out_rem = out + (full_chunks * 7);
         CharT c[8] = {0};
         std::memcpy(c, in_rem, rem * sizeof(CharT));
         uint8_t tmp[8];
         if constexpr (sizeof(CharT) == 1) {
-            Decode8to7_SWAR(reinterpret_cast<const uint8_t*>(c), tmp, false);
+            if (!Decode8to7_SWAR(reinterpret_cast<const uint8_t*>(c), tmp, false)) {
+                return false;
+            }
         } else {
-            Decode8to7_Char16(reinterpret_cast<const char16_t*>(c), tmp, false);
+            if (!Decode8to7_Char16(reinterpret_cast<const char16_t*>(c), tmp, false)) {
+                return false;
+            }
         }
-        std::memcpy(out_rem, tmp, (rem * 7) / 8);
+        if (rem > 1) {
+            uint8_t* out_rem = out + (full_chunks * 7);
+            std::memcpy(out_rem, tmp, (rem * 7) / 8);
+        }
     }
+    return true;
 }
 
 static Napi::Value Decode(const Napi::CallbackInfo& info) {
@@ -1224,10 +1243,11 @@ static Napi::Value Decode(const Napi::CallbackInfo& info) {
         return env.Null();
     }
 
+    napi_value str_val = info[0];
+
 #ifdef USE_V8_ACCELERATION
     v8::Isolate* isolate = v8::Isolate::GetCurrent();
     if (isolate) {
-        napi_value str_val = info[0];
         v8::Local<v8::Value> v8_val = *reinterpret_cast<v8::Local<v8::Value>*>(&str_val);
         if (v8_val->IsString()) {
             size_t il = 0;
@@ -1237,26 +1257,56 @@ static Napi::Value Decode(const Napi::CallbackInfo& info) {
             if (env.IsExceptionPending() || ab.IsEmpty() || (out_len > 0 && !ab.Data())) return env.Null();
             uint8_t* out = reinterpret_cast<uint8_t*>(ab.Data());
             v8::Local<v8::String> v8_str = v8_val.As<v8::String>();
+            bool success = false;
             {
                 v8::String::ValueView view(isolate, v8_str);
                 if (view.is_one_byte()) {
-                    DecodeImpl(reinterpret_cast<const uint8_t*>(view.data8()), il, out);
+                    success = DecodeImpl(reinterpret_cast<const uint8_t*>(view.data8()), il, out);
                 } else {
-                    DecodeImpl(reinterpret_cast<const char16_t*>(view.data16()), il, out);
+                    success = DecodeImpl(reinterpret_cast<const char16_t*>(view.data16()), il, out);
                 }
+            }
+            if (!success) {
+                Napi::SyntaxError::New(env, "decode: invalid input").ThrowAsJavaScriptException();
+                return env.Null();
             }
             return Napi::Uint8Array::New(env, out_len, ab, 0);
         }
     }
 #endif
 
-    std::u16string str_holder = info[0].As<Napi::String>().Utf16Value();
-    size_t il = str_holder.length();
+    size_t utf16_len = 0;
+    napi_get_value_string_utf16(env, str_val, nullptr, 0, &utf16_len);
+
+    size_t utf8_len = 0;
+    napi_get_value_string_utf8(env, str_val, nullptr, 0, &utf8_len);
+
+    if (utf8_len != utf16_len) {
+        Napi::SyntaxError::New(env, "decode: invalid input").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+
+    size_t il = utf16_len;
     size_t out_len = (il / 8) * 7 + ((il & 7) * 7) / 8;
     Napi::ArrayBuffer ab = Napi::ArrayBuffer::New(env, out_len);
     if (env.IsExceptionPending() || ab.IsEmpty() || (out_len > 0 && !ab.Data())) return env.Null();
     uint8_t* out = reinterpret_cast<uint8_t*>(ab.Data());
-    DecodeImpl(reinterpret_cast<const char16_t*>(str_holder.data()), il, out);
+
+    if (il == 0) {
+        return Napi::Uint8Array::New(env, 0, ab, 0);
+    }
+
+    constexpr size_t kStackCap = 1024;
+    char stack_buf[kStackCap];
+    char* buf = stack_buf;
+    std::string heap_buf;
+    if (il + 1 > kStackCap) {
+        heap_buf.resize(il + 1);
+        buf = heap_buf.data();
+    }
+    size_t copied = 0;
+    napi_get_value_string_latin1(env, str_val, buf, il + 1, &copied);
+    DecodeImpl(reinterpret_cast<const uint8_t*>(buf), il, out);
     return Napi::Uint8Array::New(env, out_len, ab, 0);
 }
 

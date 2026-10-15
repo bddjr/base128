@@ -284,6 +284,48 @@ for (const impl of [base128, browserBase128, extraBase128].filter(Boolean)) {
             throw new Error(`[${impl._impl}] Space_Separator test failed for ${JSON.stringify(input)}`);
         }
     }
+
+    // Verify decode invalid input (> 127) throws SyntaxError
+    const invalidDecodeInputs = [
+        '\u0080',
+        '\u0100',
+        '\u4e2d',
+        'a\u0080',
+        'ab\u0100',
+        'abcdef\u4e2d',
+        '\u0080bcdefgh',
+        'abcd\u0080fgh',
+        'abcdefg\u0080',
+        '12345678\u0080',
+        '12345678abcdefg\u4e2d',
+    ];
+    for (const input of invalidDecodeInputs) {
+        let threw = false;
+        try {
+            impl.decode(input);
+        } catch (e) {
+            threw = e instanceof SyntaxError && e.message === "decode: invalid input";
+        }
+        if (!threw) {
+            allSuccess = false;
+            throw new Error(`[${impl._impl}] Expected SyntaxError("decode: invalid input") for input with char > 127: ${JSON.stringify(input)}`);
+        }
+    }
+
+    // Verify decode non-string throws TypeError
+    for (const input of [123, null, undefined, {}, []]) {
+        let threw = false;
+        try {
+            // @ts-ignore
+            impl.decode(input);
+        } catch (e) {
+            threw = e instanceof TypeError && e.message === "decode: input must be a string";
+        }
+        if (!threw) {
+            allSuccess = false;
+            throw new Error(`[${impl._impl}] Expected TypeError for non-string decode input: ${String(input)}`);
+        }
+    }
 }
 
 // Verify EncodeResult.prototype.toString/toJSTemplateLiterals reject non-Uint8Array

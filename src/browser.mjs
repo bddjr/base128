@@ -103,37 +103,55 @@ export function decode(input) {
     // out 00000001 11111122 22222333 33334444 44455555 55666666 67777777
     if (typeof input != 'string')
         throw TypeError("decode: input must be a string");
-    const il = input.length
+    const errInvalidInput = `decode: invalid input`
+        , il = input.length
         , rem = il % 8
         , fullChunks = (il - rem) / 8
         , out = new Uint8Array(il * 0.875)
         , limit = fullChunks * 8
     var ii = 0
         , oi = 0
+        , c0
+        , c1
     while (ii < limit) {
-        const c0 = input.charCodeAt(ii++)
-            , c1 = input.charCodeAt(ii++)
-            , c2 = input.charCodeAt(ii++)
-            , c3 = input.charCodeAt(ii++)
-            , c4 = input.charCodeAt(ii++)
-            , c5 = input.charCodeAt(ii++)
-            , c6 = input.charCodeAt(ii++)
-            , c7 = input.charCodeAt(ii++)
-
+        c0 = input.charCodeAt(ii++)
+        if (c0 > 127) throw SyntaxError(errInvalidInput)
+        c1 = input.charCodeAt(ii++)
+        if (c1 > 127) throw SyntaxError(errInvalidInput)
         out[oi++] = (c0 << 1) | (c1 >> 6)
-        out[oi++] = (c1 << 2) | (c2 >> 5)
-        out[oi++] = (c2 << 3) | (c3 >> 4)
-        out[oi++] = (c3 << 4) | (c4 >> 3)
-        out[oi++] = (c4 << 5) | (c5 >> 2)
-        out[oi++] = (c5 << 6) | (c6 >> 1)
-        out[oi++] = (c6 << 7) | c7
+
+        c0 = input.charCodeAt(ii++)
+        if (c0 > 127) throw SyntaxError(errInvalidInput)
+        out[oi++] = (c1 << 2) | (c0 >> 5)
+
+        c1 = input.charCodeAt(ii++)
+        if (c1 > 127) throw SyntaxError(errInvalidInput)
+        out[oi++] = (c0 << 3) | (c1 >> 4)
+
+        c0 = input.charCodeAt(ii++)
+        if (c0 > 127) throw SyntaxError(errInvalidInput)
+        out[oi++] = (c1 << 4) | (c0 >> 3)
+
+        c1 = input.charCodeAt(ii++)
+        if (c1 > 127) throw SyntaxError(errInvalidInput)
+        out[oi++] = (c0 << 5) | (c1 >> 2)
+
+        c0 = input.charCodeAt(ii++)
+        if (c0 > 127) throw SyntaxError(errInvalidInput)
+        out[oi++] = (c1 << 6) | (c0 >> 1)
+
+        c1 = input.charCodeAt(ii++)
+        if (c1 > 127) throw SyntaxError(errInvalidInput)
+        out[oi++] = (c0 << 7) | c1
     }
-    if (rem > 1) {
-        let prev = input.charCodeAt(ii++)
+    if (rem) {
+        c0 = input.charCodeAt(ii++)
+        if (c0 > 127) throw SyntaxError(errInvalidInput)
         for (let r = 1; r < rem; r++) {
-            const curr = input.charCodeAt(ii++)
-            out[oi++] = (prev << r) | (curr >> (7 - r))
-            prev = curr
+            c1 = input.charCodeAt(ii++)
+            if (c1 > 127) throw SyntaxError(errInvalidInput)
+            out[oi++] = (c0 << r) | (c1 >> (7 - r))
+            c0 = c1
         }
     }
     return out
