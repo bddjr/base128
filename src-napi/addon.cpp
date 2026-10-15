@@ -329,8 +329,7 @@ static Napi::Value Encode(const Napi::CallbackInfo& info) {
 
     size_t full_chunks = il / 7;
     size_t rem = il - (full_chunks * 7);
-
-    size_t out_len = full_chunks * 8 + (rem + (rem != 0));
+    size_t out_len = il + full_chunks + (rem != 0);
 
     Napi::ArrayBuffer ab = Napi::ArrayBuffer::New(env, out_len);
     if (env.IsExceptionPending()) return env.Null();
@@ -533,8 +532,8 @@ static Napi::Value Decode(const Napi::CallbackInfo& info) {
 
     auto updateOutLen = [&utf16_len, &full_chunks, &rem, &out_len]() {
         full_chunks = utf16_len / 8;
-        rem = utf16_len - (full_chunks * 8);
-        out_len = full_chunks * 7 + (rem - (rem != 0));
+        rem = utf16_len & 7;
+        out_len = utf16_len - full_chunks - (rem != 0);
     };
 
 #ifdef USE_V8_ACCELERATION
