@@ -272,6 +272,23 @@ __attribute__((target("bmi2")))
 #endif
 static void EncodeLoop_BMI2(const uint8_t* src, uint8_t* dst, size_t full_chunks) {
     size_t c = 0;
+    for (; c + 4 < full_chunks; c += 4, src += 28, dst += 32) {
+        uint64_t in0, in1, in2, in3;
+        std::memcpy(&in0, src, 8);
+        std::memcpy(&in1, src + 7, 8);
+        std::memcpy(&in2, src + 14, 8);
+        std::memcpy(&in3, src + 21, 8);
+
+        uint64_t out0 = BSwap64(_pdep_u64(BSwap64(in0) >> 8, 0x7F7F7F7F7F7F7F7FULL));
+        uint64_t out1 = BSwap64(_pdep_u64(BSwap64(in1) >> 8, 0x7F7F7F7F7F7F7F7FULL));
+        uint64_t out2 = BSwap64(_pdep_u64(BSwap64(in2) >> 8, 0x7F7F7F7F7F7F7F7FULL));
+        uint64_t out3 = BSwap64(_pdep_u64(BSwap64(in3) >> 8, 0x7F7F7F7F7F7F7F7FULL));
+
+        std::memcpy(dst, &out0, 8);
+        std::memcpy(dst + 8, &out1, 8);
+        std::memcpy(dst + 16, &out2, 8);
+        std::memcpy(dst + 24, &out3, 8);
+    }
     for (; c + 1 < full_chunks; c++, src += 7, dst += 8) {
         uint64_t in_val;
         std::memcpy(&in_val, src, 8);
@@ -406,6 +423,24 @@ __attribute__((target("bmi2")))
 #endif
 static bool DecodeLoop_BMI2(const uint8_t* in, uint8_t* out, size_t full_chunks) {
     size_t c = 0;
+    for (; c + 4 < full_chunks; c += 4, in += 32, out += 28) {
+        uint64_t v0, v1, v2, v3;
+        std::memcpy(&v0, in, 8);
+        std::memcpy(&v1, in + 8, 8);
+        std::memcpy(&v2, in + 16, 8);
+        std::memcpy(&v3, in + 24, 8);
+        if ((v0 | v1 | v2 | v3) & 0x8080808080808080ULL) return false;
+
+        uint64_t out0 = BSwap64(_pext_u64(BSwap64(v0), 0x7F7F7F7F7F7F7F7FULL) << 8);
+        uint64_t out1 = BSwap64(_pext_u64(BSwap64(v1), 0x7F7F7F7F7F7F7F7FULL) << 8);
+        uint64_t out2 = BSwap64(_pext_u64(BSwap64(v2), 0x7F7F7F7F7F7F7F7FULL) << 8);
+        uint64_t out3 = BSwap64(_pext_u64(BSwap64(v3), 0x7F7F7F7F7F7F7F7FULL) << 8);
+
+        std::memcpy(out, &out0, 8);
+        std::memcpy(out + 7, &out1, 8);
+        std::memcpy(out + 14, &out2, 8);
+        std::memcpy(out + 21, &out3, 8);
+    }
     for (; c + 1 < full_chunks; c++, in += 8, out += 7) {
         uint64_t v;
         std::memcpy(&v, in, 8);
@@ -503,14 +538,12 @@ static Napi::Value Decode(const Napi::CallbackInfo& info) {
     if (isolate) {
         v8::Local<v8::Value> v8_val = *reinterpret_cast<v8::Local<v8::Value>*>(&str_val);
         if (v8_val->IsString()) {
-            size_t il = 0;
-            napi_status status = napi_get_value_string_utf16(env, str_val, nullptr, 0, &il);
-            NAPI_THROW_IF_FAILED(env, status, env.Null());
+            v8::Local<v8::String> v8_str = v8_val.As<v8::String>();
+            size_t il = static_cast<size_t>(v8_str->Length());
             size_t out_len = (il / 8) * 7 + ((il & 7) * 7) / 8;
             Napi::ArrayBuffer ab = Napi::ArrayBuffer::New(env, out_len);
             if (env.IsExceptionPending() || ab.IsEmpty() || (out_len > 0 && !ab.Data())) return env.Null();
             uint8_t* out = reinterpret_cast<uint8_t*>(ab.Data());
-            v8::Local<v8::String> v8_str = v8_val.As<v8::String>();
             bool success = false;
             {
                 v8::String::ValueView view(isolate, v8_str);
@@ -625,17 +658,35 @@ static inline char* EscapeBytesToTemplateLiterals(const char* src, size_t len, s
     *dst++ = '`';
 
     size_t i = 0;
+
+#if defined(__x86_64__) || defined(_M_X64)
+    const __m128i v0  = _mm_set1_epi8(0);
+    const __m128i v13 = _mm_set1_epi8(13);
+    const __m128i v36 = _mm_set1_epi8(36);
+    const __m128i v60 = _mm_set1_epi8(60);
+    const __m128i v92 = _mm_set1_epi8(92);
+    const __m128i v96 = _mm_set1_epi8(96);
+#elif defined(__aarch64__) || defined(_M_ARM64)
+    const uint8x16_t v0  = vdupq_n_u8(0);
+    const uint8x16_t v13 = vdupq_n_u8(13);
+    const uint8x16_t v36 = vdupq_n_u8(36);
+    const uint8x16_t v60 = vdupq_n_u8(60);
+    const uint8x16_t v92 = vdupq_n_u8(92);
+    const uint8x16_t v96 = vdupq_n_u8(96);
+#elif (defined(__PPC64__) || defined(__ppc64__) || defined(_ARCH_PPC64)) && defined(__ALTIVEC__)
+    const __vector unsigned char v0  = vec_splats(static_cast<unsigned char>(0));
+    const __vector unsigned char v13 = vec_splats(static_cast<unsigned char>(13));
+    const __vector unsigned char v36 = vec_splats(static_cast<unsigned char>(36));
+    const __vector unsigned char v60 = vec_splats(static_cast<unsigned char>(60));
+    const __vector unsigned char v92 = vec_splats(static_cast<unsigned char>(92));
+    const __vector unsigned char v96 = vec_splats(static_cast<unsigned char>(96));
+    const __vector unsigned char zero = vec_splats(static_cast<unsigned char>(0));
+#endif
+
     while (i < len) {
         size_t start = i;
 
 #if defined(__x86_64__) || defined(_M_X64)
-        const __m128i v0  = _mm_set1_epi8(0);
-        const __m128i v13 = _mm_set1_epi8(13);
-        const __m128i v36 = _mm_set1_epi8(36);
-        const __m128i v60 = _mm_set1_epi8(60);
-        const __m128i v92 = _mm_set1_epi8(92);
-        const __m128i v96 = _mm_set1_epi8(96);
-
         while (i + 16 <= len) {
             __m128i v = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src + i));
             __m128i m0  = _mm_cmpeq_epi8(v, v0);
@@ -682,13 +733,6 @@ static inline char* EscapeBytesToTemplateLiterals(const char* src, size_t len, s
             i += 16;
         }
 #elif defined(__aarch64__) || defined(_M_ARM64)
-        const uint8x16_t v0  = vdupq_n_u8(0);
-        const uint8x16_t v13 = vdupq_n_u8(13);
-        const uint8x16_t v36 = vdupq_n_u8(36);
-        const uint8x16_t v60 = vdupq_n_u8(60);
-        const uint8x16_t v92 = vdupq_n_u8(92);
-        const uint8x16_t v96 = vdupq_n_u8(96);
-
         while (i + 16 <= len) {
             uint8x16_t v = vld1q_u8(reinterpret_cast<const uint8_t*>(src + i));
             uint8x16_t m0  = vceqq_u8(v, v0);
@@ -766,14 +810,6 @@ static inline char* EscapeBytesToTemplateLiterals(const char* src, size_t len, s
             i += 16;
         }
 #elif (defined(__PPC64__) || defined(__ppc64__) || defined(_ARCH_PPC64)) && defined(__ALTIVEC__)
-        const __vector unsigned char v0  = vec_splats(static_cast<unsigned char>(0));
-        const __vector unsigned char v13 = vec_splats(static_cast<unsigned char>(13));
-        const __vector unsigned char v36 = vec_splats(static_cast<unsigned char>(36));
-        const __vector unsigned char v60 = vec_splats(static_cast<unsigned char>(60));
-        const __vector unsigned char v92 = vec_splats(static_cast<unsigned char>(92));
-        const __vector unsigned char v96 = vec_splats(static_cast<unsigned char>(96));
-        const __vector unsigned char zero = vec_splats(static_cast<unsigned char>(0));
-
         while (i + 16 <= len) {
             __vector unsigned char v = vec_xl(0, reinterpret_cast<const unsigned char*>(src + i));
             auto m0  = vec_cmpeq(v, v0);
@@ -1070,8 +1106,12 @@ static inline void EscapeToTemplateLiterals(const CharT* src, size_t len, Parsed
         if (chunk_len > 0) {
             if (!ensureCap(chunk_len + 32)) return;
             if (is_one_byte) {
-                for (size_t k = 0; k < chunk_len; k++) {
-                    buf8[out_len + k] = static_cast<char>(src[start + k]);
+                if constexpr (sizeof(CharT) == 1) {
+                    std::memcpy(buf8 + out_len, src + start, chunk_len);
+                } else {
+                    for (size_t k = 0; k < chunk_len; k++) {
+                        buf8[out_len + k] = static_cast<char>(src[start + k]);
+                    }
                 }
             } else {
                 std::memcpy(buf16 + out_len, src + start, chunk_len * sizeof(char16_t));
@@ -1286,29 +1326,59 @@ static Napi::Value EncodeResult_ToJSTemplateLiterals(const Napi::CallbackInfo& i
         v8::Local<v8::Value> v8_val = *reinterpret_cast<v8::Local<v8::Value>*>(&str_handle);
         if (v8_val->IsString()) {
             v8::Local<v8::String> v8_str = v8_val.As<v8::String>();
-            {
-                v8::String::ValueView view(isolate, v8_str);
-                if (view.is_one_byte()) {
-                    EscapeToTemplateLiterals(reinterpret_cast<const uint8_t*>(view.data8()), view.length(), res);
-                } else {
-                    EscapeToTemplateLiterals(reinterpret_cast<const char16_t*>(view.data16()), view.length(), res);
-                }
+            v8::String::ValueView view(isolate, v8_str);
+            if (view.is_one_byte()) {
+                EscapeToTemplateLiterals(reinterpret_cast<const uint8_t*>(view.data8()), view.length(), res);
+            } else {
+                EscapeToTemplateLiterals(reinterpret_cast<const char16_t*>(view.data16()), view.length(), res);
             }
-            if (res.oom) {
-                Napi::Error::New(env, "Out of memory").ThrowAsJavaScriptException();
-                return env.Null();
-            }
-            if (res.error) return env.Null();
-            if (res.is_one_byte) {
-                return MakeLatin1String(env, static_cast<char*>(res.buf), res.len);
-            }
-            return MakeUtf16String(env, static_cast<char16_t*>(res.buf), res.len);
+            goto done;
         }
     }
 #endif
 
-    std::u16string input = strVal.Utf16Value();
-    EscapeToTemplateLiterals(input.data(), input.length(), res);
+    {
+        napi_value str_handle = strVal;
+        size_t utf16_len = 0;
+        napi_status status = napi_get_value_string_utf16(env, str_handle, nullptr, 0, &utf16_len);
+        NAPI_THROW_IF_FAILED(env, status, env.Null());
+
+        size_t utf8_len = 0;
+        status = napi_get_value_string_utf8(env, str_handle, nullptr, 0, &utf8_len);
+        NAPI_THROW_IF_FAILED(env, status, env.Null());
+
+        if (utf8_len == utf16_len) {
+            constexpr size_t kStackCap = 1024;
+            char stack_buf[kStackCap];
+            char* buf = stack_buf;
+            std::string heap_buf;
+            if (utf16_len + 1 > kStackCap) {
+                heap_buf.resize(utf16_len + 1);
+                buf = heap_buf.data();
+            }
+            size_t copied = 0;
+            status = napi_get_value_string_latin1(env, str_handle, buf, utf16_len + 1, &copied);
+            NAPI_THROW_IF_FAILED(env, status, env.Null());
+            EscapeToTemplateLiterals(reinterpret_cast<const uint8_t*>(buf), utf16_len, res);
+        } else {
+            constexpr size_t kStackCap16 = 512;
+            char16_t stack_buf16[kStackCap16];
+            char16_t* buf16 = stack_buf16;
+            std::u16string heap_buf16;
+            if (utf16_len + 1 > kStackCap16) {
+                heap_buf16.resize(utf16_len + 1);
+                buf16 = heap_buf16.data();
+            }
+            size_t copied = 0;
+            status = napi_get_value_string_utf16(env, str_handle, buf16, utf16_len + 1, &copied);
+            NAPI_THROW_IF_FAILED(env, status, env.Null());
+            EscapeToTemplateLiterals(reinterpret_cast<const char16_t*>(buf16), utf16_len, res);
+        }
+    }
+
+#ifdef USE_V8_ACCELERATION
+done:
+#endif
     if (res.oom) {
         Napi::Error::New(env, "Out of memory").ThrowAsJavaScriptException();
         return env.Null();
@@ -1879,7 +1949,9 @@ static Napi::Value ParseJSTemplateLiterals(const Napi::CallbackInfo& info) {
         }
     }
 
+#ifdef USE_V8_ACCELERATION
 done:
+#endif
     if (res.oom) {
         Napi::Error::New(env, "Out of memory").ThrowAsJavaScriptException();
         return env.Null();
