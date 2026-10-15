@@ -327,17 +327,14 @@ static Napi::Value Encode(const Napi::CallbackInfo& info) {
     NAPI_THROW_IF_FAILED(env, status, env.Null());
     const uint8_t* in = static_cast<const uint8_t*>(in_ptr);
 
-    size_t rem = il % 7;
-    size_t out_len = (il / 7) * 8;
-    if (rem) {
-        out_len += (rem * 8 + 6) / 7;
-    }
+    size_t full_chunks = il / 7;
+    size_t rem = il - (full_chunks * 7);
+
+    size_t out_len = full_chunks * 8 + (rem + (rem != 0));
 
     Napi::ArrayBuffer ab = Napi::ArrayBuffer::New(env, out_len);
-    if (env.IsExceptionPending() || ab.IsEmpty() || (out_len > 0 && !ab.Data())) return env.Null();
+    if (env.IsExceptionPending()) return env.Null();
     uint8_t* out = reinterpret_cast<uint8_t*>(ab.Data());
-
-    size_t full_chunks = il / 7;
 #if defined(__x86_64__) || defined(_M_X64)
     if (CpuHasFastBMI2()) {
         EncodeLoop_BMI2(in, out, full_chunks);
@@ -359,7 +356,7 @@ static Napi::Value Encode(const Napi::CallbackInfo& info) {
     }
 
     Napi::Uint8Array out_ta = Napi::Uint8Array::New(env, out_len, ab, 0);
-    if (env.IsExceptionPending() || out_ta.IsEmpty()) return env.Null();
+    if (env.IsExceptionPending()) return env.Null();
     AddonData* addonData = env.GetInstanceData<AddonData>();
     return addonData->encodeResultConstructor.New({ out_ta });
 }
@@ -473,9 +470,7 @@ static bool DecodeLoop_SWAR(const uint8_t* in, uint8_t* out, size_t full_chunks)
 }
 
 template <UnsignedChar CharT>
-static inline bool DecodeImpl(const CharT* in, size_t il, uint8_t* out) {
-    size_t full_chunks = il / 8;
-
+static inline bool DecodeImpl(const CharT* in, size_t full_chunks, size_t rem, uint8_t* out) {
     if constexpr (sizeof(CharT) == 1) {
 #if defined(__x86_64__) || defined(_M_X64)
         if (CpuHasFastBMI2()) {
@@ -501,7 +496,6 @@ static inline bool DecodeImpl(const CharT* in, size_t il, uint8_t* out) {
         }
     }
 
-    size_t rem = il - (full_chunks * 8);
     if (rem) {
         const CharT* in_rem = in + (full_chunks * 8);
         CharT c[8] = {0};
@@ -518,7 +512,7 @@ static inline bool DecodeImpl(const CharT* in, size_t il, uint8_t* out) {
         }
         if (rem > 1) {
             uint8_t* out_rem = out + (full_chunks * 7);
-            std::memcpy(out_rem, tmp, (rem * 7) / 8);
+            std::memcpy(out_rem, tmp, rem - 1);
         }
     }
     return true;
@@ -532,6 +526,16 @@ static Napi::Value Decode(const Napi::CallbackInfo& info) {
     }
 
     napi_value str_val = info[0];
+    size_t utf16_len = 0;
+    size_t full_chunks;
+    size_t rem;
+    size_t out_len;
+
+    auto updateOutLen = [&utf16_len, &full_chunks, &rem, &out_len]() {
+        full_chunks = utf16_len / 8;
+        rem = utf16_len - (full_chunks * 8);
+        out_len = full_chunks * 7 + (rem - (rem != 0));
+    };
 
 #ifdef USE_V8_ACCELERATION
     v8::Isolate* isolate = v8::Isolate::GetCurrent();
@@ -539,18 +543,18 @@ static Napi::Value Decode(const Napi::CallbackInfo& info) {
         v8::Local<v8::Value> v8_val = *reinterpret_cast<v8::Local<v8::Value>*>(&str_val);
         if (v8_val->IsString()) {
             v8::Local<v8::String> v8_str = v8_val.As<v8::String>();
-            size_t il = static_cast<size_t>(v8_str->Length());
-            size_t out_len = (il / 8) * 7 + ((il & 7) * 7) / 8;
+            utf16_len = v8_str->Length();
+            updateOutLen();
             Napi::ArrayBuffer ab = Napi::ArrayBuffer::New(env, out_len);
-            if (env.IsExceptionPending() || ab.IsEmpty() || (out_len > 0 && !ab.Data())) return env.Null();
+            if (env.IsExceptionPending()) return env.Null();
             uint8_t* out = reinterpret_cast<uint8_t*>(ab.Data());
             bool success = false;
             {
                 v8::String::ValueView view(isolate, v8_str);
                 if (view.is_one_byte()) {
-                    success = DecodeImpl(reinterpret_cast<const uint8_t*>(view.data8()), il, out);
+                    success = DecodeImpl(reinterpret_cast<const uint8_t*>(view.data8()), full_chunks, rem, out);
                 } else {
-                    success = DecodeImpl(reinterpret_cast<const char16_t*>(view.data16()), il, out);
+                    success = DecodeImpl(reinterpret_cast<const char16_t*>(view.data16()), full_chunks, rem, out);
                 }
             }
             if (!success) {
@@ -562,7 +566,6 @@ static Napi::Value Decode(const Napi::CallbackInfo& info) {
     }
 #endif
 
-    size_t utf16_len = 0;
     napi_status status = napi_get_value_string_utf16(env, str_val, nullptr, 0, &utf16_len);
     NAPI_THROW_IF_FAILED(env, status, env.Null());
 
@@ -575,13 +578,12 @@ static Napi::Value Decode(const Napi::CallbackInfo& info) {
         return env.Null();
     }
 
-    size_t il = utf16_len;
-    size_t out_len = (il / 8) * 7 + ((il & 7) * 7) / 8;
+    updateOutLen();
     Napi::ArrayBuffer ab = Napi::ArrayBuffer::New(env, out_len);
-    if (env.IsExceptionPending() || ab.IsEmpty() || (out_len > 0 && !ab.Data())) return env.Null();
+    if (env.IsExceptionPending()) return env.Null();
     uint8_t* out = reinterpret_cast<uint8_t*>(ab.Data());
 
-    if (il == 0) {
+    if (utf16_len == 0) {
         return Napi::Uint8Array::New(env, 0, ab, 0);
     }
 
@@ -589,14 +591,14 @@ static Napi::Value Decode(const Napi::CallbackInfo& info) {
     char stack_buf[kStackCap];
     char* buf = stack_buf;
     std::string heap_buf;
-    if (il + 1 > kStackCap) {
-        heap_buf.resize(il + 1);
+    if (utf16_len + 1 > kStackCap) {
+        heap_buf.resize(utf16_len + 1);
         buf = heap_buf.data();
     }
     size_t copied = 0;
-    status = napi_get_value_string_latin1(env, str_val, buf, il + 1, &copied);
+    status = napi_get_value_string_latin1(env, str_val, buf, utf16_len + 1, &copied);
     NAPI_THROW_IF_FAILED(env, status, env.Null());
-    bool success = DecodeImpl(reinterpret_cast<const uint8_t*>(buf), il, out);
+    bool success = DecodeImpl(reinterpret_cast<const uint8_t*>(buf), full_chunks, rem, out);
     if (!success) {
         Napi::SyntaxError::New(env, "decode: invalid input").ThrowAsJavaScriptException();
         return env.Null();

@@ -55,7 +55,7 @@ export function encode(input) {
     const il = input.length
         , rem = il % 7
         , fullChunks = (il - rem) / 7
-        , out = new Uint8Array(fullChunks * 8 + Math.ceil(rem / 0.875))
+        , out = new Uint8Array(fullChunks * 8 + rem + /**@type {*}*/(!!rem))
         , limit = fullChunks * 7
     var ii = 0
         , oi = 0
@@ -105,9 +105,9 @@ export function decode(input) {
         throw TypeError("decode: input must be a string");
     const errInvalidInput = `decode: invalid input`
         , il = input.length
-        , rem = il % 8
+        , rem = il & 7
         , fullChunks = (il - rem) / 8
-        , out = new Uint8Array(il * 0.875)
+        , out = new Uint8Array(fullChunks * 7 + rem - /**@type {*}*/(!!rem))
         , limit = fullChunks * 8
     var ii = 0
         , oi = 0
