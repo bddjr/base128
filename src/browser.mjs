@@ -54,9 +54,8 @@ export function encode(input) {
     }
     const il = input.length
         , rem = il % 7
-        , fullChunks = (il - rem) / 7
-        , out = new Uint8Array(fullChunks * 8 + rem + /**@type {*}*/(!!rem))
-        , limit = fullChunks * 7
+        , limit = il - rem
+        , out = new Uint8Array(il + (limit / 7) + /**@type {*}*/(!!rem))
     var ii = 0
         , oi = 0
     while (ii < limit) {
@@ -106,9 +105,8 @@ export function decode(input) {
     const errInvalidInput = `decode: invalid input`
         , il = input.length
         , rem = il & 7
-        , fullChunks = (il - rem) / 8
-        , out = new Uint8Array(fullChunks * 7 + rem - /**@type {*}*/(!!rem))
-        , limit = fullChunks * 8
+        , limit = il - rem
+        , out = new Uint8Array(il - (limit / 8) - /**@type {*}*/(!!rem))
     var ii = 0
         , oi = 0
         , c0
