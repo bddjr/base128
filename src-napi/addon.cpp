@@ -1817,39 +1817,60 @@ static Napi::Value ParseJSTemplateLiterals(const Napi::CallbackInfo& info) {
     };
 
     ParsedStringResult res;
+    napi_value str_val = info[0];
 
 #ifdef USE_V8_ACCELERATION
     v8::Isolate* isolate = v8::Isolate::GetCurrent();
     if (isolate) {
-        napi_value str_val = info[0];
         v8::Local<v8::Value> v8_val = *reinterpret_cast<v8::Local<v8::Value>*>(&str_val);
         if (v8_val->IsString()) {
             v8::Local<v8::String> v8_str = v8_val.As<v8::String>();
-            {
-                v8::String::ValueView view(isolate, v8_str);
-                if (view.is_one_byte()) {
-                    ParseJSTemplateLiteralsImpl(reinterpret_cast<const uint8_t*>(view.data8()), view.length(), res);
-                } else {
-                    ParseJSTemplateLiteralsImpl(reinterpret_cast<const char16_t*>(view.data16()), view.length(), res);
-                }
+            v8::String::ValueView view(isolate, v8_str);
+            if (view.is_one_byte()) {
+                ParseJSTemplateLiteralsImpl(reinterpret_cast<const uint8_t*>(view.data8()), view.length(), res);
+            } else {
+                ParseJSTemplateLiteralsImpl(reinterpret_cast<const char16_t*>(view.data16()), view.length(), res);
             }
-            if (res.oom) {
-                Napi::Error::New(env, "Out of memory").ThrowAsJavaScriptException();
-                return env.Null();
-            }
-            if (res.error) {
-                return ThrowSyntaxError();
-            }
-            if (res.is_one_byte) {
-                return MakeLatin1String(env, static_cast<char*>(res.buf), res.len);
-            }
-            return MakeUtf16String(env, static_cast<char16_t*>(res.buf), res.len);
+            goto done;
         }
     }
 #endif
 
-    std::u16string input = info[0].As<Napi::String>().Utf16Value();
-    ParseJSTemplateLiteralsImpl(input.data(), input.length(), res);
+    {
+        size_t utf16_len = 0;
+        napi_get_value_string_utf16(env, str_val, nullptr, 0, &utf16_len);
+
+        size_t utf8_len = 0;
+        napi_get_value_string_utf8(env, str_val, nullptr, 0, &utf8_len);
+
+        if (utf8_len == utf16_len) {
+            constexpr size_t kStackCap = 1024;
+            char stack_buf[kStackCap];
+            char* buf = stack_buf;
+            std::string heap_buf;
+            if (utf16_len + 1 > kStackCap) {
+                heap_buf.resize(utf16_len + 1);
+                buf = heap_buf.data();
+            }
+            size_t copied = 0;
+            napi_get_value_string_latin1(env, str_val, buf, utf16_len + 1, &copied);
+            ParseJSTemplateLiteralsImpl(reinterpret_cast<const uint8_t*>(buf), utf16_len, res);
+        } else {
+            constexpr size_t kStackCap16 = 512;
+            char16_t stack_buf16[kStackCap16];
+            char16_t* buf16 = stack_buf16;
+            std::u16string heap_buf16;
+            if (utf16_len + 1 > kStackCap16) {
+                heap_buf16.resize(utf16_len + 1);
+                buf16 = heap_buf16.data();
+            }
+            size_t copied = 0;
+            napi_get_value_string_utf16(env, str_val, buf16, utf16_len + 1, &copied);
+            ParseJSTemplateLiteralsImpl(reinterpret_cast<const char16_t*>(buf16), utf16_len, res);
+        }
+    }
+
+done:
     if (res.oom) {
         Napi::Error::New(env, "Out of memory").ThrowAsJavaScriptException();
         return env.Null();
