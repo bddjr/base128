@@ -15,28 +15,6 @@
 #include <cstdlib>
 #include <type_traits>
 
-struct AddonData {
-    Napi::FunctionReference encodeResultConstructor;
-    ~AddonData() {
-        encodeResultConstructor.Reset();
-    }
-};
-
-static void CleanupAddonData(Napi::Env /*env*/, AddonData* data) {
-    delete data;
-}
-
-
-static constexpr auto kIsSpecialChar = []() constexpr {
-    std::array<bool, 256> table{};
-    table['\0'] = true;
-    table['\r'] = true;
-    table['$']  = true;
-    table['<']  = true;
-    table['\\'] = true;
-    table['`']  = true;
-    return table;
-}();
 
 #if defined(_MSC_VER)
 #include <intrin.h>
@@ -54,6 +32,39 @@ static constexpr auto kIsSpecialChar = []() constexpr {
 #undef vector
 #undef pixel
 #endif
+
+
+// ============================================================================
+// 1. Common Types, Concepts & Utilities
+// ============================================================================
+
+struct AddonData {
+    Napi::FunctionReference encodeResultConstructor;
+    ~AddonData() {
+        encodeResultConstructor.Reset();
+    }
+};
+
+static void CleanupAddonData(Napi::Env /*env*/, AddonData* data) {
+    delete data;
+}
+
+struct ParsedStringResult {
+    void* buf = nullptr;
+    size_t len = 0;
+    bool is_one_byte = true;
+    bool error = false;
+    bool oom = false;
+};
+
+template <typename T>
+concept AnyChar = std::is_same_v<T, char> ||
+                  std::is_same_v<T, uint8_t> ||
+                  std::is_same_v<T, char16_t>;
+
+template <typename T>
+concept UnsignedChar = std::is_same_v<T, uint8_t> ||
+                       std::is_same_v<T, char16_t>;
 
 static inline uint64_t BSwap64(uint64_t v) {
 #if defined(_MSC_VER)
@@ -109,131 +120,10 @@ static inline bool CpuHasFastBMI2() {
     return has_fast_bmi2;
 }
 
-#if defined(__GNUC__) || defined(__clang__)
-__attribute__((target("bmi2")))
-#endif
-static void EncodeLoop_BMI2(const uint8_t* src, uint8_t* dst, size_t full_chunks) {
-    size_t c = 0;
-    for (; c + 1 < full_chunks; c++, src += 7, dst += 8) {
-        uint64_t in_val;
-        std::memcpy(&in_val, src, 8);
-        uint64_t src_56 = BSwap64(in_val) >> 8;
-        uint64_t out_val = BSwap64(_pdep_u64(src_56, 0x7F7F7F7F7F7F7F7FULL));
-        std::memcpy(dst, &out_val, 8);
-    }
-    if (c < full_chunks) {
-        uint64_t in_val = 0;
-        std::memcpy(&in_val, src, 7);
-        uint64_t src_56 = BSwap64(in_val) >> 8;
-        uint64_t out_val = BSwap64(_pdep_u64(src_56, 0x7F7F7F7F7F7F7F7FULL));
-        std::memcpy(dst, &out_val, 8);
-    }
-}
-
-#if defined(__GNUC__) || defined(__clang__)
-__attribute__((target("bmi2")))
-#endif
-static bool DecodeLoop_BMI2(const uint8_t* in, uint8_t* out, size_t full_chunks) {
-    size_t c = 0;
-    for (; c + 1 < full_chunks; c++, in += 8, out += 7) {
-        uint64_t v;
-        std::memcpy(&v, in, 8);
-        if (v & 0x8080808080808080ULL) return false;
-        uint64_t src_56 = _pext_u64(BSwap64(v), 0x7F7F7F7F7F7F7F7FULL);
-        uint64_t out_val = BSwap64(src_56 << 8);
-        std::memcpy(out, &out_val, 8);
-    }
-    if (c < full_chunks) {
-        uint64_t v;
-        std::memcpy(&v, in, 8);
-        if (v & 0x8080808080808080ULL) return false;
-        uint64_t src_56 = _pext_u64(BSwap64(v), 0x7F7F7F7F7F7F7F7FULL);
-        uint64_t out_val = BSwap64(src_56 << 8);
-        std::memcpy(out, &out_val, 7);
-    }
-    return true;
-}
-#endif
-
-static inline void Encode7to8_SWAR(const uint8_t* src, uint8_t* dst, bool can_read_8) {
-    uint64_t in_val = 0;
-    std::memcpy(&in_val, src, can_read_8 ? 8 : 7);
-    uint64_t x = ToBE64(in_val) >> 8; // 56 bits in low bits
-    x = ((x & 0x00FFFFFFF0000000ULL) << 4) | (x & 0x000000000FFFFFFFULL);
-    x = ((x & 0x0FFFC0000FFFC000ULL) << 2) | (x & 0x00003FFF00003FFFULL);
-    x = ((x & 0x3F803F803F803F80ULL) << 1) | (x & 0x007F007F007F007FULL);
-    uint64_t out_val = ToBE64(x);
-    std::memcpy(dst, &out_val, 8);
-}
-
-static inline void Decode8to7_SWAR_FromVal(uint64_t v, uint8_t* out, bool can_write_8) {
-    uint64_t x = ToBE64(v);
-    x = ((x & 0x7F007F007F007F00ULL) >> 1) | (x & 0x007F007F007F007FULL);
-    x = ((x & 0x3FFF00003FFF0000ULL) >> 2) | (x & 0x00003FFF00003FFFULL);
-    uint64_t src_56 = ((x & 0x0FFFFFFF00000000ULL) >> 4) | (x & 0x000000000FFFFFFFULL);
-    uint64_t out_val = ToBE64(src_56 << 8);
-    std::memcpy(out, &out_val, can_write_8 ? 8 : 7);
-}
-
-static inline bool Decode8to7_SWAR(const uint8_t* in, uint8_t* out, bool can_write_8) {
-    uint64_t v;
-    std::memcpy(&v, in, 8);
-    if (v & 0x8080808080808080ULL) return false;
-    Decode8to7_SWAR_FromVal(v, out, can_write_8);
-    return true;
-}
-
-static inline bool Pack8Char16To8Uint8(const char16_t* in, uint64_t& out_v) {
-    uint64_t w0, w1;
-    std::memcpy(&w0, in, 8);
-    std::memcpy(&w1, in + 4, 8);
-    if ((w0 | w1) & 0xFF80FF80FF80FF80ULL) return false;
-#if defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
-    auto pack4 = [](uint64_t w) -> uint32_t {
-        w = (w | (w << 8)) & 0x7F7F00007F7F0000ULL;
-        return static_cast<uint32_t>((w | (w << 16)) >> 32);
-    };
-    uint32_t p0 = pack4(w0);
-    uint32_t p1 = pack4(w1);
-    out_v = (static_cast<uint64_t>(p0) << 32) | p1;
-#else
-    auto pack4 = [](uint64_t w) -> uint32_t {
-        w = (w | (w >> 8)) & 0x00007F7F00007F7FULL;
-        return static_cast<uint32_t>(w | (w >> 16));
-    };
-    uint32_t p0 = pack4(w0);
-    uint32_t p1 = pack4(w1);
-    out_v = (static_cast<uint64_t>(p1) << 32) | p0;
-#endif
-    return true;
-}
-
-static inline bool Decode8to7_Char16(const char16_t* in, uint8_t* out, bool can_write_8) {
-    uint64_t v;
-    if (!Pack8Char16To8Uint8(in, v)) return false;
-    Decode8to7_SWAR_FromVal(v, out, can_write_8);
-    return true;
-}
-
-static void EncodeLoop_SWAR(const uint8_t* src, uint8_t* dst, size_t full_chunks) {
-    size_t c = 0;
-    for (; c + 1 < full_chunks; c++, src += 7, dst += 8) {
-        Encode7to8_SWAR(src, dst, true);
-    }
-    if (c < full_chunks) {
-        Encode7to8_SWAR(src, dst, false);
-    }
-}
-
-static bool DecodeLoop_SWAR(const uint8_t* in, uint8_t* out, size_t full_chunks) {
-    size_t c = 0;
-    for (; c + 1 < full_chunks; c++, in += 8, out += 7) {
-        if (!Decode8to7_SWAR(in, out, true)) return false;
-    }
-    if (c < full_chunks) {
-        if (!Decode8to7_SWAR(in, out, false)) return false;
-    }
-    return true;
+static inline bool IsUint8Array(const Napi::Value& val) {
+    if (!val.IsTypedArray()) return false;
+    napi_typedarray_type type = val.As<Napi::TypedArray>().TypedArrayType();
+    return type == napi_uint8_array || type == napi_uint8_clamped_array;
 }
 
 static inline void Widen8To16(const uint8_t* src, char16_t* dst, size_t len) {
@@ -360,37 +250,333 @@ static Napi::Value MakeUtf16String(napi_env env, char16_t* buf, size_t len) {
     return Napi::Value(env, res);
 }
 
-struct ParsedStringResult {
-    void* buf = nullptr;
-    size_t len = 0;
-    bool is_one_byte = true;
-    bool error = false;
-    bool oom = false;
-};
 
-template <typename T>
-concept AnyChar = std::is_same_v<T, char> ||
-                  std::is_same_v<T, uint8_t> ||
-                  std::is_same_v<T, char16_t>;
+// ============================================================================
+// 2. Base128 Encode
+// ============================================================================
 
-template <typename T>
-concept UnsignedChar = std::is_same_v<T, uint8_t> ||
-                       std::is_same_v<T, char16_t>;
 
-template <UnsignedChar CharT>
-static inline bool IsTemplateLiteralWhitespace(CharT c) {
-    if (c == ' ' || (c >= '\t' && c <= '\r') || c == 0xA0) {
-        return true;
-    }
-    if constexpr (sizeof(CharT) > 1) {
-        if (c == 0xFEFF || c == 0x2028 || c == 0x2029 || c == 0x1680 ||
-            (c >= 0x2000 && c <= 0x200A) || c == 0x202F || c == 0x205F || c == 0x3000) {
-            return true;
-        }
-    }
-    return false;
+static inline void Encode7to8_SWAR(const uint8_t* src, uint8_t* dst, bool can_read_8) {
+    uint64_t in_val = 0;
+    std::memcpy(&in_val, src, can_read_8 ? 8 : 7);
+    uint64_t x = ToBE64(in_val) >> 8; // 56 bits in low bits
+    x = ((x & 0x00FFFFFFF0000000ULL) << 4) | (x & 0x000000000FFFFFFFULL);
+    x = ((x & 0x0FFFC0000FFFC000ULL) << 2) | (x & 0x00003FFF00003FFFULL);
+    x = ((x & 0x3F803F803F803F80ULL) << 1) | (x & 0x007F007F007F007FULL);
+    uint64_t out_val = ToBE64(x);
+    std::memcpy(dst, &out_val, 8);
 }
 
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((target("bmi2")))
+#endif
+static void EncodeLoop_BMI2(const uint8_t* src, uint8_t* dst, size_t full_chunks) {
+    size_t c = 0;
+    for (; c + 1 < full_chunks; c++, src += 7, dst += 8) {
+        uint64_t in_val;
+        std::memcpy(&in_val, src, 8);
+        uint64_t src_56 = BSwap64(in_val) >> 8;
+        uint64_t out_val = BSwap64(_pdep_u64(src_56, 0x7F7F7F7F7F7F7F7FULL));
+        std::memcpy(dst, &out_val, 8);
+    }
+    if (c < full_chunks) {
+        uint64_t in_val = 0;
+        std::memcpy(&in_val, src, 7);
+        uint64_t src_56 = BSwap64(in_val) >> 8;
+        uint64_t out_val = BSwap64(_pdep_u64(src_56, 0x7F7F7F7F7F7F7F7FULL));
+        std::memcpy(dst, &out_val, 8);
+    }
+}
+
+static void EncodeLoop_SWAR(const uint8_t* src, uint8_t* dst, size_t full_chunks) {
+    size_t c = 0;
+    for (; c + 1 < full_chunks; c++, src += 7, dst += 8) {
+        Encode7to8_SWAR(src, dst, true);
+    }
+    if (c < full_chunks) {
+        Encode7to8_SWAR(src, dst, false);
+    }
+}
+
+static Napi::Value Encode(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+    if (info.Length() < 1 || !IsUint8Array(info[0])) {
+        Napi::TypeError::New(env, "encode: input must be a Uint8Array or Uint8ClampedArray").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+    void* in_ptr = nullptr;
+    size_t il = 0;
+    napi_get_typedarray_info(env, info[0], nullptr, &il, &in_ptr, nullptr, nullptr);
+    const uint8_t* in = static_cast<const uint8_t*>(in_ptr);
+
+    size_t rem = il % 7;
+    size_t out_len = (il / 7) * 8;
+    if (rem) {
+        out_len += (rem * 8 + 6) / 7;
+    }
+
+    Napi::ArrayBuffer ab = Napi::ArrayBuffer::New(env, out_len);
+    if (env.IsExceptionPending() || ab.IsEmpty() || (out_len > 0 && !ab.Data())) return env.Null();
+    uint8_t* out = reinterpret_cast<uint8_t*>(ab.Data());
+
+    size_t full_chunks = il / 7;
+#if defined(__x86_64__) || defined(_M_X64)
+    if (CpuHasFastBMI2()) {
+        EncodeLoop_BMI2(in, out, full_chunks);
+    } else
+#endif
+    {
+        EncodeLoop_SWAR(in, out, full_chunks);
+    }
+
+    in += full_chunks * 7;
+    out += full_chunks * 8;
+
+    if (rem) {
+        uint8_t b[7] = {0};
+        std::memcpy(b, in, rem);
+        uint8_t tmp[8];
+        Encode7to8_SWAR(b, tmp, false);
+        std::memcpy(out, tmp, rem + 1);
+    }
+
+    Napi::Uint8Array out_ta = Napi::Uint8Array::New(env, out_len, ab, 0);
+    if (env.IsExceptionPending() || out_ta.IsEmpty()) return env.Null();
+    AddonData* addonData = env.GetInstanceData<AddonData>();
+    return addonData->encodeResultConstructor.New({ out_ta });
+}
+
+// ============================================================================
+// 3. Base128 Decode
+// ============================================================================
+
+
+static inline void Decode8to7_SWAR_FromVal(uint64_t v, uint8_t* out, bool can_write_8) {
+    uint64_t x = ToBE64(v);
+    x = ((x & 0x7F007F007F007F00ULL) >> 1) | (x & 0x007F007F007F007FULL);
+    x = ((x & 0x3FFF00003FFF0000ULL) >> 2) | (x & 0x00003FFF00003FFFULL);
+    uint64_t src_56 = ((x & 0x0FFFFFFF00000000ULL) >> 4) | (x & 0x000000000FFFFFFFULL);
+    uint64_t out_val = ToBE64(src_56 << 8);
+    std::memcpy(out, &out_val, can_write_8 ? 8 : 7);
+}
+
+static inline bool Decode8to7_SWAR(const uint8_t* in, uint8_t* out, bool can_write_8) {
+    uint64_t v;
+    std::memcpy(&v, in, 8);
+    if (v & 0x8080808080808080ULL) return false;
+    Decode8to7_SWAR_FromVal(v, out, can_write_8);
+    return true;
+}
+
+static inline bool Pack8Char16To8Uint8(const char16_t* in, uint64_t& out_v) {
+    uint64_t w0, w1;
+    std::memcpy(&w0, in, 8);
+    std::memcpy(&w1, in + 4, 8);
+    if ((w0 | w1) & 0xFF80FF80FF80FF80ULL) return false;
+#if defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
+    auto pack4 = [](uint64_t w) -> uint32_t {
+        w = (w | (w << 8)) & 0x7F7F00007F7F0000ULL;
+        return static_cast<uint32_t>((w | (w << 16)) >> 32);
+    };
+    uint32_t p0 = pack4(w0);
+    uint32_t p1 = pack4(w1);
+    out_v = (static_cast<uint64_t>(p0) << 32) | p1;
+#else
+    auto pack4 = [](uint64_t w) -> uint32_t {
+        w = (w | (w >> 8)) & 0x00007F7F00007F7FULL;
+        return static_cast<uint32_t>(w | (w >> 16));
+    };
+    uint32_t p0 = pack4(w0);
+    uint32_t p1 = pack4(w1);
+    out_v = (static_cast<uint64_t>(p1) << 32) | p0;
+#endif
+    return true;
+}
+
+static inline bool Decode8to7_Char16(const char16_t* in, uint8_t* out, bool can_write_8) {
+    uint64_t v;
+    if (!Pack8Char16To8Uint8(in, v)) return false;
+    Decode8to7_SWAR_FromVal(v, out, can_write_8);
+    return true;
+}
+
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((target("bmi2")))
+#endif
+static bool DecodeLoop_BMI2(const uint8_t* in, uint8_t* out, size_t full_chunks) {
+    size_t c = 0;
+    for (; c + 1 < full_chunks; c++, in += 8, out += 7) {
+        uint64_t v;
+        std::memcpy(&v, in, 8);
+        if (v & 0x8080808080808080ULL) return false;
+        uint64_t src_56 = _pext_u64(BSwap64(v), 0x7F7F7F7F7F7F7F7FULL);
+        uint64_t out_val = BSwap64(src_56 << 8);
+        std::memcpy(out, &out_val, 8);
+    }
+    if (c < full_chunks) {
+        uint64_t v;
+        std::memcpy(&v, in, 8);
+        if (v & 0x8080808080808080ULL) return false;
+        uint64_t src_56 = _pext_u64(BSwap64(v), 0x7F7F7F7F7F7F7F7FULL);
+        uint64_t out_val = BSwap64(src_56 << 8);
+        std::memcpy(out, &out_val, 7);
+    }
+    return true;
+}
+#endif
+
+static bool DecodeLoop_SWAR(const uint8_t* in, uint8_t* out, size_t full_chunks) {
+    size_t c = 0;
+    for (; c + 1 < full_chunks; c++, in += 8, out += 7) {
+        if (!Decode8to7_SWAR(in, out, true)) return false;
+    }
+    if (c < full_chunks) {
+        if (!Decode8to7_SWAR(in, out, false)) return false;
+    }
+    return true;
+}
+
+template <UnsignedChar CharT>
+static inline bool DecodeImpl(const CharT* in, size_t il, uint8_t* out) {
+    size_t full_chunks = il / 8;
+
+    if constexpr (sizeof(CharT) == 1) {
+#if defined(__x86_64__) || defined(_M_X64)
+        if (CpuHasFastBMI2()) {
+            if (!DecodeLoop_BMI2(reinterpret_cast<const uint8_t*>(in), out, full_chunks)) {
+                return false;
+            }
+        } else
+#endif
+        {
+            if (!DecodeLoop_SWAR(reinterpret_cast<const uint8_t*>(in), out, full_chunks)) {
+                return false;
+            }
+        }
+    } else {
+        size_t c = 0;
+        const char16_t* in16 = reinterpret_cast<const char16_t*>(in);
+        uint8_t* out_curr = out;
+        for (; c + 1 < full_chunks; c++, in16 += 8, out_curr += 7) {
+            if (!Decode8to7_Char16(in16, out_curr, true)) return false;
+        }
+        if (c < full_chunks) {
+            if (!Decode8to7_Char16(in16, out_curr, false)) return false;
+        }
+    }
+
+    size_t rem = il - (full_chunks * 8);
+    if (rem) {
+        const CharT* in_rem = in + (full_chunks * 8);
+        CharT c[8] = {0};
+        std::memcpy(c, in_rem, rem * sizeof(CharT));
+        uint8_t tmp[8];
+        if constexpr (sizeof(CharT) == 1) {
+            if (!Decode8to7_SWAR(reinterpret_cast<const uint8_t*>(c), tmp, false)) {
+                return false;
+            }
+        } else {
+            if (!Decode8to7_Char16(reinterpret_cast<const char16_t*>(c), tmp, false)) {
+                return false;
+            }
+        }
+        if (rem > 1) {
+            uint8_t* out_rem = out + (full_chunks * 7);
+            std::memcpy(out_rem, tmp, (rem * 7) / 8);
+        }
+    }
+    return true;
+}
+
+static Napi::Value Decode(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+    if (info.Length() < 1 || !info[0].IsString()) {
+        Napi::TypeError::New(env, "decode: input must be a string").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+
+    napi_value str_val = info[0];
+
+#ifdef USE_V8_ACCELERATION
+    v8::Isolate* isolate = v8::Isolate::GetCurrent();
+    if (isolate) {
+        v8::Local<v8::Value> v8_val = *reinterpret_cast<v8::Local<v8::Value>*>(&str_val);
+        if (v8_val->IsString()) {
+            size_t il = 0;
+            napi_get_value_string_utf16(env, str_val, nullptr, 0, &il);
+            size_t out_len = (il / 8) * 7 + ((il & 7) * 7) / 8;
+            Napi::ArrayBuffer ab = Napi::ArrayBuffer::New(env, out_len);
+            if (env.IsExceptionPending() || ab.IsEmpty() || (out_len > 0 && !ab.Data())) return env.Null();
+            uint8_t* out = reinterpret_cast<uint8_t*>(ab.Data());
+            v8::Local<v8::String> v8_str = v8_val.As<v8::String>();
+            bool success = false;
+            {
+                v8::String::ValueView view(isolate, v8_str);
+                if (view.is_one_byte()) {
+                    success = DecodeImpl(reinterpret_cast<const uint8_t*>(view.data8()), il, out);
+                } else {
+                    success = DecodeImpl(reinterpret_cast<const char16_t*>(view.data16()), il, out);
+                }
+            }
+            if (!success) {
+                Napi::SyntaxError::New(env, "decode: invalid input").ThrowAsJavaScriptException();
+                return env.Null();
+            }
+            return Napi::Uint8Array::New(env, out_len, ab, 0);
+        }
+    }
+#endif
+
+    size_t utf16_len = 0;
+    napi_get_value_string_utf16(env, str_val, nullptr, 0, &utf16_len);
+
+    size_t utf8_len = 0;
+    napi_get_value_string_utf8(env, str_val, nullptr, 0, &utf8_len);
+
+    if (utf8_len != utf16_len) {
+        Napi::SyntaxError::New(env, "decode: invalid input").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+
+    size_t il = utf16_len;
+    size_t out_len = (il / 8) * 7 + ((il & 7) * 7) / 8;
+    Napi::ArrayBuffer ab = Napi::ArrayBuffer::New(env, out_len);
+    if (env.IsExceptionPending() || ab.IsEmpty() || (out_len > 0 && !ab.Data())) return env.Null();
+    uint8_t* out = reinterpret_cast<uint8_t*>(ab.Data());
+
+    if (il == 0) {
+        return Napi::Uint8Array::New(env, 0, ab, 0);
+    }
+
+    constexpr size_t kStackCap = 1024;
+    char stack_buf[kStackCap];
+    char* buf = stack_buf;
+    std::string heap_buf;
+    if (il + 1 > kStackCap) {
+        heap_buf.resize(il + 1);
+        buf = heap_buf.data();
+    }
+    size_t copied = 0;
+    napi_get_value_string_latin1(env, str_val, buf, il + 1, &copied);
+    DecodeImpl(reinterpret_cast<const uint8_t*>(buf), il, out);
+    return Napi::Uint8Array::New(env, out_len, ab, 0);
+}
+
+// ============================================================================
+// 4. EncodeResult & Template Literal Escaping
+// ============================================================================
+
+
+static constexpr auto kIsSpecialChar = []() constexpr {
+    std::array<bool, 256> table{};
+    table['\0'] = true;
+    table['\r'] = true;
+    table['$']  = true;
+    table['<']  = true;
+    table['\\'] = true;
+    table['`']  = true;
+    return table;
+}();
 template <AnyChar CharT>
 static inline bool IsCloseScriptTag(const CharT* src, size_t i, size_t len) {
     if (i + 7 >= len) return false;
@@ -1011,12 +1197,6 @@ static Napi::Value EncodeResult_Constructor(const Napi::CallbackInfo& info) {
     return self;
 }
 
-static inline bool IsUint8Array(const Napi::Value& val) {
-    if (!val.IsTypedArray()) return false;
-    napi_typedarray_type type = val.As<Napi::TypedArray>().TypedArrayType();
-    return type == napi_uint8_array || type == napi_uint8_clamped_array;
-}
-
 static Napi::Value EncodeResult_ToString(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
     Napi::Value self = info.This();
@@ -1136,179 +1316,24 @@ static Napi::Value EncodeResult_ToJSTemplateLiterals(const Napi::CallbackInfo& i
 }
 
 
-static Napi::Value Encode(const Napi::CallbackInfo& info) {
-    Napi::Env env = info.Env();
-    if (info.Length() < 1 || !IsUint8Array(info[0])) {
-        Napi::TypeError::New(env, "encode: input must be a Uint8Array or Uint8ClampedArray").ThrowAsJavaScriptException();
-        return env.Null();
-    }
-    void* in_ptr = nullptr;
-    size_t il = 0;
-    napi_get_typedarray_info(env, info[0], nullptr, &il, &in_ptr, nullptr, nullptr);
-    const uint8_t* in = static_cast<const uint8_t*>(in_ptr);
-
-    size_t rem = il % 7;
-    size_t out_len = (il / 7) * 8;
-    if (rem) {
-        out_len += (rem * 8 + 6) / 7;
-    }
-
-    Napi::ArrayBuffer ab = Napi::ArrayBuffer::New(env, out_len);
-    if (env.IsExceptionPending() || ab.IsEmpty() || (out_len > 0 && !ab.Data())) return env.Null();
-    uint8_t* out = reinterpret_cast<uint8_t*>(ab.Data());
-
-    size_t full_chunks = il / 7;
-#if defined(__x86_64__) || defined(_M_X64)
-    if (CpuHasFastBMI2()) {
-        EncodeLoop_BMI2(in, out, full_chunks);
-    } else
-#endif
-    {
-        EncodeLoop_SWAR(in, out, full_chunks);
-    }
-
-    in += full_chunks * 7;
-    out += full_chunks * 8;
-
-    if (rem) {
-        uint8_t b[7] = {0};
-        std::memcpy(b, in, rem);
-        uint8_t tmp[8];
-        Encode7to8_SWAR(b, tmp, false);
-        std::memcpy(out, tmp, rem + 1);
-    }
-
-    Napi::Uint8Array out_ta = Napi::Uint8Array::New(env, out_len, ab, 0);
-    if (env.IsExceptionPending() || out_ta.IsEmpty()) return env.Null();
-    AddonData* addonData = env.GetInstanceData<AddonData>();
-    return addonData->encodeResultConstructor.New({ out_ta });
-}
+// ============================================================================
+// 5. parseJSTemplateLiterals
+// ============================================================================
 
 template <UnsignedChar CharT>
-static inline bool DecodeImpl(const CharT* in, size_t il, uint8_t* out) {
-    size_t full_chunks = il / 8;
-
-    if constexpr (sizeof(CharT) == 1) {
-#if defined(__x86_64__) || defined(_M_X64)
-        if (CpuHasFastBMI2()) {
-            if (!DecodeLoop_BMI2(reinterpret_cast<const uint8_t*>(in), out, full_chunks)) {
-                return false;
-            }
-        } else
-#endif
-        {
-            if (!DecodeLoop_SWAR(reinterpret_cast<const uint8_t*>(in), out, full_chunks)) {
-                return false;
-            }
-        }
-    } else {
-        size_t c = 0;
-        const char16_t* in16 = reinterpret_cast<const char16_t*>(in);
-        uint8_t* out_curr = out;
-        for (; c + 1 < full_chunks; c++, in16 += 8, out_curr += 7) {
-            if (!Decode8to7_Char16(in16, out_curr, true)) return false;
-        }
-        if (c < full_chunks) {
-            if (!Decode8to7_Char16(in16, out_curr, false)) return false;
+static inline bool IsTemplateLiteralWhitespace(CharT c) {
+    if (c == ' ' || (c >= '\t' && c <= '\r') || c == 0xA0) {
+        return true;
+    }
+    if constexpr (sizeof(CharT) > 1) {
+        if (c == 0xFEFF || c == 0x2028 || c == 0x2029 || c == 0x1680 ||
+            (c >= 0x2000 && c <= 0x200A) || c == 0x202F || c == 0x205F || c == 0x3000) {
+            return true;
         }
     }
-
-    size_t rem = il - (full_chunks * 8);
-    if (rem) {
-        const CharT* in_rem = in + (full_chunks * 8);
-        CharT c[8] = {0};
-        std::memcpy(c, in_rem, rem * sizeof(CharT));
-        uint8_t tmp[8];
-        if constexpr (sizeof(CharT) == 1) {
-            if (!Decode8to7_SWAR(reinterpret_cast<const uint8_t*>(c), tmp, false)) {
-                return false;
-            }
-        } else {
-            if (!Decode8to7_Char16(reinterpret_cast<const char16_t*>(c), tmp, false)) {
-                return false;
-            }
-        }
-        if (rem > 1) {
-            uint8_t* out_rem = out + (full_chunks * 7);
-            std::memcpy(out_rem, tmp, (rem * 7) / 8);
-        }
-    }
-    return true;
+    return false;
 }
 
-static Napi::Value Decode(const Napi::CallbackInfo& info) {
-    Napi::Env env = info.Env();
-    if (info.Length() < 1 || !info[0].IsString()) {
-        Napi::TypeError::New(env, "decode: input must be a string").ThrowAsJavaScriptException();
-        return env.Null();
-    }
-
-    napi_value str_val = info[0];
-
-#ifdef USE_V8_ACCELERATION
-    v8::Isolate* isolate = v8::Isolate::GetCurrent();
-    if (isolate) {
-        v8::Local<v8::Value> v8_val = *reinterpret_cast<v8::Local<v8::Value>*>(&str_val);
-        if (v8_val->IsString()) {
-            size_t il = 0;
-            napi_get_value_string_utf16(env, str_val, nullptr, 0, &il);
-            size_t out_len = (il / 8) * 7 + ((il & 7) * 7) / 8;
-            Napi::ArrayBuffer ab = Napi::ArrayBuffer::New(env, out_len);
-            if (env.IsExceptionPending() || ab.IsEmpty() || (out_len > 0 && !ab.Data())) return env.Null();
-            uint8_t* out = reinterpret_cast<uint8_t*>(ab.Data());
-            v8::Local<v8::String> v8_str = v8_val.As<v8::String>();
-            bool success = false;
-            {
-                v8::String::ValueView view(isolate, v8_str);
-                if (view.is_one_byte()) {
-                    success = DecodeImpl(reinterpret_cast<const uint8_t*>(view.data8()), il, out);
-                } else {
-                    success = DecodeImpl(reinterpret_cast<const char16_t*>(view.data16()), il, out);
-                }
-            }
-            if (!success) {
-                Napi::SyntaxError::New(env, "decode: invalid input").ThrowAsJavaScriptException();
-                return env.Null();
-            }
-            return Napi::Uint8Array::New(env, out_len, ab, 0);
-        }
-    }
-#endif
-
-    size_t utf16_len = 0;
-    napi_get_value_string_utf16(env, str_val, nullptr, 0, &utf16_len);
-
-    size_t utf8_len = 0;
-    napi_get_value_string_utf8(env, str_val, nullptr, 0, &utf8_len);
-
-    if (utf8_len != utf16_len) {
-        Napi::SyntaxError::New(env, "decode: invalid input").ThrowAsJavaScriptException();
-        return env.Null();
-    }
-
-    size_t il = utf16_len;
-    size_t out_len = (il / 8) * 7 + ((il & 7) * 7) / 8;
-    Napi::ArrayBuffer ab = Napi::ArrayBuffer::New(env, out_len);
-    if (env.IsExceptionPending() || ab.IsEmpty() || (out_len > 0 && !ab.Data())) return env.Null();
-    uint8_t* out = reinterpret_cast<uint8_t*>(ab.Data());
-
-    if (il == 0) {
-        return Napi::Uint8Array::New(env, 0, ab, 0);
-    }
-
-    constexpr size_t kStackCap = 1024;
-    char stack_buf[kStackCap];
-    char* buf = stack_buf;
-    std::string heap_buf;
-    if (il + 1 > kStackCap) {
-        heap_buf.resize(il + 1);
-        buf = heap_buf.data();
-    }
-    size_t copied = 0;
-    napi_get_value_string_latin1(env, str_val, buf, il + 1, &copied);
-    DecodeImpl(reinterpret_cast<const uint8_t*>(buf), il, out);
-    return Napi::Uint8Array::New(env, out_len, ab, 0);
-}
 
 template <AnyChar CharT>
 static inline int HexVal(CharT c) {
@@ -1837,6 +1862,11 @@ static Napi::Value ParseJSTemplateLiterals(const Napi::CallbackInfo& info) {
     }
     return MakeUtf16String(env, static_cast<char16_t*>(res.buf), res.len);
 }
+
+// ============================================================================
+// 6. V8 Feature Detection & Module Initialization
+// ============================================================================
+
 
 #ifdef USE_V8_ACCELERATION
 #if defined(_MSC_VER)
