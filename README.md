@@ -43,12 +43,12 @@ file length: 682086
 
 v8.node:
 time encode: 0.208ms
-time toJSTemplateLiterals: 1.148ms
-time toString: 0.231ms
-time string toJSTemplateLiterals: 1.048ms
+time toJSTemplateLiterals: 0.912ms
+time toString: 0.199ms
+time string toJSTemplateLiterals: 0.914ms
 toJSTemplateLiterals length: 804860
-time parseJSTemplateLiterals: 0.846ms
-time decode: 0.245ms
+time parseJSTemplateLiterals: 0.83ms
+time decode: 0.233ms
 equal: true
 
 base64:
@@ -62,13 +62,13 @@ Encode `50MB` file, use base128 is `7,664,748 Bytes` smaller than base64:
 file length: 50000000
 
 v8.node:
-time encode: 13.245ms
-time toJSTemplateLiterals: 63.461ms
-time toString: 10.327ms
-time string toJSTemplateLiterals: 63.61ms
+time encode: 12.432ms
+time toJSTemplateLiterals: 64.074ms
+time toString: 10.153ms
+time string toJSTemplateLiterals: 64.179ms
 toJSTemplateLiterals length: 59001920
-time parseJSTemplateLiterals: 58.126ms
-time decode: 12.108ms
+time parseJSTemplateLiterals: 56.478ms
+time decode: 13.03ms
 equal: true
 
 base64:
