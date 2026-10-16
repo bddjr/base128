@@ -59,6 +59,14 @@ jobs:
           name: binding-${{ matrix.name }}
           path: npm/${{ matrix.name }}/
 
+      - name: Upload wasm
+        if: matrix.name == 'linux-x64-gnu'
+        uses: actions/upload-artifact@v7
+        with:
+          name: wasm
+          path: wasm/base128.wasm
+
+
   build-container:
     name: build (${{ matrix.name }})
     runs-on: ${{ matrix.os }}

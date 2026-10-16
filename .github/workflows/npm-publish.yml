@@ -34,5 +34,14 @@ jobs:
       - name: Display downloaded bindings
         run: ls -R downloaded-bindings
 
+      - name: Download wasm
+        uses: actions/download-artifact@v8
+        with:
+          name: wasm
+          path: wasm
+
+      - name: Display wasm
+        run: ls -la wasm
+
       - name: Publish all packages
         run: node scripts/publish-all.mjs downloaded-bindings

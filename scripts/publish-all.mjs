@@ -70,7 +70,21 @@ if (missing.length > 0) {
     throw new Error(`Publish aborted: ${missing.length} architecture bindings missing. All architectures must be built before publishing.`);
 }
 
-console.log(`\nAll ${expectedSubpkgs.length} architecture bindings verified! Proceeding with publish...`);
+console.log(`\nAll ${expectedSubpkgs.length} architecture bindings verified!`);
+
+// 3.1 Verify WebAssembly binary
+const wasmFilePath = path.resolve("wasm", "base128.wasm");
+if (!fs.existsSync(wasmFilePath)) {
+    console.error(`\n[FATAL] WebAssembly binary not found: ${wasmFilePath}`);
+    throw new Error(`Publish aborted: wasm/base128.wasm is missing. The WASM artifact must be downloaded before publishing.`);
+}
+const wasmStat = fs.statSync(wasmFilePath);
+if (wasmStat.size === 0) {
+    console.error(`\n[FATAL] WebAssembly binary is empty (0 bytes): ${wasmFilePath}`);
+    throw new Error(`Publish aborted: wasm/base128.wasm is 0 bytes.`);
+}
+console.log(`Verified WebAssembly binary: ${wasmFilePath} (${wasmStat.size} bytes)`);
+console.log(`\nProceeding with publish...`);
 
 // 4. Publish all subpackages
 const publishedBindings = {};
