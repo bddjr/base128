@@ -132,6 +132,7 @@ export class EncodeResult {
         if (this === getPendingResult() && this._wasmOffset !== undefined) {
             return textDecoder.decode(new Uint8Array(memory.buffer, this._wasmOffset, this._wasmLen))
         }
+        // Intentionally do not check the type of `this` or `this.bytes` here.
         return textDecoder.decode(this.bytes)
     }
     toJSTemplateLiterals() {
@@ -150,6 +151,7 @@ export class EncodeResult {
 
         materializePending()
 
+        // Intentionally do not check the type of `this` or `this.bytes` here.
         const bytes = this.bytes
         if (bytes) {
             const inLen = bytes.length

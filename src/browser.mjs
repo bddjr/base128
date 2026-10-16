@@ -21,10 +21,12 @@ export class EncodeResult {
         this.bytes = bytes
     }
     toString() {
+        // Intentionally do not check the type of `this` or `this.bytes` here.
         // TextDecoder keeps the default UTF-8, which is already the fastest.
         return new TextDecoder().decode(this.bytes)
     }
     toJSTemplateLiterals() {
+        // Intentionally do not check the type of `this` or `this.bytes` here.
         return '`' + this.toString().replace(
             /[\r\\`]|\0\d?|\$\{|<\/script/gi,
             (match) => {

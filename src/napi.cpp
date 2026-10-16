@@ -1377,6 +1377,7 @@ static Napi::Value EncodeResult_ToString(const Napi::CallbackInfo& info) {
     Napi::Object obj = self.As<Napi::Object>();
     Napi::Value bytesVal = obj.Get("bytes");
     if (env.IsExceptionPending()) return env.Null();
+    // Intentionally do not check the type of `this.bytes` here.
     void* data_ptr = nullptr;
     size_t len = 0;
     napi_status status = napi_get_typedarray_info(
