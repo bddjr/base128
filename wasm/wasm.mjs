@@ -66,23 +66,13 @@ function align16(n) {
     return n + (-n & 15)
 }
 
-/** @type {WeakRef<EncodeResult> | EncodeResult | null} */
+/** @type {EncodeResult | null} */
 let lastPendingResult = null
 
-function getPendingResult() {
-    return lastPendingResult
-        ? typeof (/** @type {*} */ (lastPendingResult)).deref == 'function'
-            ? (/** @type {WeakRef<EncodeResult>} */ (lastPendingResult)).deref()
-            : (/** @type {EncodeResult} */ (lastPendingResult))
-        : null
-}
-
 function materializePending() {
-    if (lastPendingResult !== null) {
-        const res = getPendingResult()
-        if (res && res._wasmOffset !== undefined) {
-            res.bytes
-        }
+    if (lastPendingResult) {
+        if (lastPendingResult._materialize)
+            lastPendingResult._materialize()
         lastPendingResult = null
     }
 }
@@ -107,19 +97,23 @@ export class EncodeResult {
                     writable: true,
                     value: val
                 })
-                if (getPendingResult() === this) lastPendingResult = null
+                if (this === lastPendingResult) lastPendingResult = null
                 delete this._wasmOffset
                 delete this._wasmLen
+                delete this._materialize
                 return val
             }
+            const copyBytes = () => defineValue(
+                this._wasmOffset !== undefined && this._wasmLen !== undefined
+                    ? new Uint8Array(memory.buffer, this._wasmOffset, this._wasmLen).slice()
+                    : new Uint8Array()
+            )
+            /** @type {(() => Uint8Array<ArrayBuffer>) | undefined} */
+            this._materialize = copyBytes
             Object.defineProperty(this, 'bytes', {
                 configurable: true,
                 enumerable: true,
-                get: () => defineValue(
-                    this._wasmOffset !== undefined && this._wasmLen !== undefined
-                        ? new Uint8Array(memory.buffer, this._wasmOffset, this._wasmLen).slice()
-                        : new Uint8Array()
-                ),
+                get: copyBytes,
                 set: defineValue
             })
         } else {
@@ -129,13 +123,13 @@ export class EncodeResult {
     toString() {
         // Intentionally do not check the type of `this` or `this.bytes` here.
         return textDecoder.decode(
-            this === getPendingResult() && this._wasmOffset !== undefined
+            this === lastPendingResult && this._wasmOffset !== undefined
                 ? new Uint8Array(memory.buffer, this._wasmOffset, this._wasmLen)
                 : this.bytes
         )
     }
     toJSTemplateLiterals() {
-        if (this === getPendingResult() && this._wasmOffset !== undefined && this._wasmLen !== undefined) {
+        if (this === lastPendingResult && this._wasmOffset !== undefined && this._wasmLen !== undefined) {
             return this._wasmLen === 0 ? '``' : toJSTemplateLiteralsFromMemory(this._wasmOffset, this._wasmLen)
         }
 
@@ -202,9 +196,7 @@ export function encode(input) {
     ensureCapacity(actualOutOffset + Math.ceil(actualInBytes / 0.875) + 16)
 
     const outLen = base128wasm_encode(inOffset, actualInBytes, actualOutOffset)
-    const result = new EncodeResult(null, actualOutOffset, outLen)
-    lastPendingResult = typeof WeakRef == 'function' ? new WeakRef(result) : result
-    return result
+    return lastPendingResult = new EncodeResult(null, actualOutOffset, outLen)
 }
 
 /**
