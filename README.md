@@ -42,13 +42,13 @@ Encode this jpg file, use base128 is `104,588 Bytes` smaller than base64:
 file length: 682086
 
 v8.node:
-time encode: 0.192ms
-time toJSTemplateLiterals: 0.864ms
-time toString: 0.165ms
-time string toJSTemplateLiterals: 0.86ms
+time encode: 0.204ms
+time toJSTemplateLiterals: 0.854ms
+time toString: 0.186ms
+time string toJSTemplateLiterals: 0.892ms
 toJSTemplateLiterals length: 804860
-time parseJSTemplateLiterals: 0.653ms
-time decode: 0.205ms
+time parseJSTemplateLiterals: 0.715ms
+time decode: 0.213ms
 equal: true
 
 base64:
@@ -62,13 +62,13 @@ Encode `50MB` file, use base128 is `7,664,748 Bytes` smaller than base64:
 file length: 50000000
 
 v8.node:
-time encode: 12.624ms
-time toJSTemplateLiterals: 61.892ms
-time toString: 10.202ms
-time string toJSTemplateLiterals: 61.599ms
+time encode: 12.145ms
+time toJSTemplateLiterals: 61.905ms
+time toString: 9.956ms
+time string toJSTemplateLiterals: 61.732ms
 toJSTemplateLiterals length: 59001920
-time parseJSTemplateLiterals: 46.229ms
-time decode: 12.013ms
+time parseJSTemplateLiterals: 45.462ms
+time decode: 12.233ms
 equal: true
 
 base64:
