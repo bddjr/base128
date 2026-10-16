@@ -53,6 +53,7 @@ const compileCmd = [
     "-flto",
     "-nostdlib",
     "-msimd128",
+    "-mbulk-memory",
     "-Wl,--no-entry",
     "-Wl,--export=base128wasm_encode",
     "-Wl,--export=base128wasm_decode",

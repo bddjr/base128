@@ -23,6 +23,31 @@ static inline unsigned int __msvc_ctz(unsigned int x) {
 
 #if defined(__GNUC__) || defined(__clang__)
 #define WASM_EXPORT extern "C" __attribute__((visibility("default")))
+
+extern "C" __attribute__((no_builtin("memcpy"))) void* memcpy(void* dest, const void* src, size_t n) {
+    uint8_t* d = (uint8_t*)dest;
+    const uint8_t* s = (const uint8_t*)src;
+    while (n >= 8) {
+        uint64_t v;
+        __builtin_memcpy(&v, s, 8);
+        __builtin_memcpy(d, &v, 8);
+        d += 8;
+        s += 8;
+        n -= 8;
+    }
+    while (n--) {
+        *d++ = *s++;
+    }
+    return dest;
+}
+
+extern "C" __attribute__((no_builtin("memset"))) void* memset(void* dest, int c, size_t n) {
+    uint8_t* d = (uint8_t*)dest;
+    while (n--) {
+        *d++ = (uint8_t)c;
+    }
+    return dest;
+}
 #else
 #define WASM_EXPORT extern "C"
 #endif
