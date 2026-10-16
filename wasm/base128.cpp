@@ -263,6 +263,68 @@ WASM_EXPORT double base128wasm_to_js_template_literals(const uint8_t* in, size_t
     uint64_t out_len = 0;
     out[out_len++] = '`';
 
+    uint64_t start = 0;
+    uint64_t i = 0;
+
+    auto emit_plain = [&](uint64_t pos) {
+        uint64_t plain = pos - start;
+        if (plain > 0) {
+            __builtin_memcpy(out + out_len, in + start, plain);
+            out_len += plain;
+        }
+    };
+
+    auto handle_escape = [&](uint64_t pos, uint8_t c) {
+        if (c == '$') {
+            if (pos + 1 < in_len_64 && in[pos + 1] == '{') {
+                emit_plain(pos);
+                out[out_len++] = '\\';
+                out[out_len++] = '$';
+                out[out_len++] = '{';
+                start = pos + 2;
+            }
+        } else if (c == '<') {
+            if (IsCloseScriptTag(in, pos, in_len_64)) {
+                emit_plain(pos);
+                out[out_len++] = '<';
+                out[out_len++] = '\\';
+                out[out_len++] = '/';
+                for (uint64_t k = 2; k <= 7; k++) {
+                    out[out_len++] = in[pos + k];
+                }
+                start = pos + 8;
+            }
+        } else {
+            emit_plain(pos);
+            if (c == '\r') {
+                out[out_len++] = '\\';
+                out[out_len++] = 'r';
+                start = pos + 1;
+            } else if (c == '\\') {
+                out[out_len++] = '\\';
+                out[out_len++] = '\\';
+                start = pos + 1;
+            } else if (c == '`') {
+                out[out_len++] = '\\';
+                out[out_len++] = '`';
+                start = pos + 1;
+            } else /* c == '\0' */ {
+                if (pos + 1 < in_len_64 && in[pos + 1] >= '0' && in[pos + 1] <= '9') {
+                    out[out_len++] = '\\';
+                    out[out_len++] = 'x';
+                    out[out_len++] = '0';
+                    out[out_len++] = '0';
+                    out[out_len++] = in[pos + 1];
+                    start = pos + 2;
+                } else {
+                    out[out_len++] = '\\';
+                    out[out_len++] = '0';
+                    start = pos + 1;
+                }
+            }
+        }
+    };
+
 #if defined(__wasm_simd128__)
     const v128_t v0  = wasm_i8x16_splat(0);
     const v128_t v13 = wasm_i8x16_splat(13);
@@ -270,100 +332,41 @@ WASM_EXPORT double base128wasm_to_js_template_literals(const uint8_t* in, size_t
     const v128_t v60 = wasm_i8x16_splat(60);
     const v128_t v92 = wasm_i8x16_splat(92);
     const v128_t v96 = wasm_i8x16_splat(96);
+
+    while (i + 16 <= in_len_64) {
+        v128_t v = wasm_v128_load(in + i);
+        v128_t m0  = wasm_i8x16_eq(v, v0);
+        v128_t m13 = wasm_i8x16_eq(v, v13);
+        v128_t m36 = wasm_i8x16_eq(v, v36);
+        v128_t m60 = wasm_i8x16_eq(v, v60);
+        v128_t m92 = wasm_i8x16_eq(v, v92);
+        v128_t m96 = wasm_i8x16_eq(v, v96);
+        v128_t any = wasm_v128_or(wasm_v128_or(m0, m13),
+                     wasm_v128_or(wasm_v128_or(m36, m60), wasm_v128_or(m92, m96)));
+        int mask = wasm_i8x16_bitmask(any);
+        while (mask != 0) {
+            unsigned int offset = __builtin_ctz(mask);
+            uint64_t pos = i + offset;
+            if (pos >= start) {
+                handle_escape(pos, in[pos]);
+            }
+            mask &= mask - 1;
+        }
+        i += 16;
+    }
 #endif
 
-    uint64_t i = 0;
     while (i < in_len_64) {
-        uint64_t start = i;
-
-#if defined(__wasm_simd128__)
-        while (i + 16 <= in_len_64) {
-            v128_t v = wasm_v128_load(in + i);
-            v128_t m0  = wasm_i8x16_eq(v, v0);
-            v128_t m13 = wasm_i8x16_eq(v, v13);
-            v128_t m36 = wasm_i8x16_eq(v, v36);
-            v128_t m60 = wasm_i8x16_eq(v, v60);
-            v128_t m92 = wasm_i8x16_eq(v, v92);
-            v128_t m96 = wasm_i8x16_eq(v, v96);
-            v128_t any = wasm_v128_or(wasm_v128_or(m0, m13),
-                         wasm_v128_or(wasm_v128_or(m36, m60), wasm_v128_or(m92, m96)));
-            int mask = wasm_i8x16_bitmask(any);
-            if (mask != 0) {
-                unsigned int offset = __builtin_ctz(mask);
-                i += offset;
-                break;
+        if (i >= start) {
+            uint8_t c = in[i];
+            if (kIsSpecialChar[c]) {
+                handle_escape(i, c);
             }
-            i += 16;
         }
-#endif
-
-        while (i < in_len_64 && !kIsSpecialChar[in[i]]) {
-            i++;
-        }
-
-        uint64_t plain = i - start;
-        if (plain > 0) {
-            __builtin_memcpy(out + out_len, in + start, plain);
-            out_len += plain;
-        }
-
-        if (i >= in_len_64) break;
-
-        uint8_t c = in[i];
-        if (c == '$') {
-            if (i + 1 < in_len_64 && in[i + 1] == '{') {
-                out[out_len++] = '\\';
-                out[out_len++] = '$';
-                out[out_len++] = '{';
-                i += 2;
-            } else {
-                out[out_len++] = '$';
-                i++;
-            }
-        } else if (c == '<') {
-            if (IsCloseScriptTag(in, i, in_len_64)) {
-                out[out_len++] = '<';
-                out[out_len++] = '\\';
-                out[out_len++] = '/';
-                for (uint64_t k = 2; k <= 7; k++) {
-                    out[out_len++] = in[i + k];
-                }
-                i += 8;
-            } else {
-                out[out_len++] = '<';
-                i++;
-            }
-        } else if (c == '\r') {
-            out[out_len++] = '\\';
-            out[out_len++] = 'r';
-            i++;
-        } else if (c == '\\') {
-            out[out_len++] = '\\';
-            out[out_len++] = '\\';
-            i++;
-        } else if (c == '`') {
-            out[out_len++] = '\\';
-            out[out_len++] = '`';
-            i++;
-        } else if (c == '\0') {
-            if (i + 1 < in_len_64 && in[i + 1] >= '0' && in[i + 1] <= '9') {
-                out[out_len++] = '\\';
-                out[out_len++] = 'x';
-                out[out_len++] = '0';
-                out[out_len++] = '0';
-                out[out_len++] = in[i + 1];
-                i += 2;
-            } else {
-                out[out_len++] = '\\';
-                out[out_len++] = '0';
-                i++;
-            }
-        } else {
-            out[out_len++] = c;
-            i++;
-        }
+        i++;
     }
 
+    emit_plain(in_len_64);
     out[out_len++] = '`';
     return static_cast<double>(out_len);
 }

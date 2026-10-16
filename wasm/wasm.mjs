@@ -1,18 +1,16 @@
 // base128-ascii (The Unlicense)
 
-const wasmUrl = new URL('./base128.wasm', import.meta.url)
 const memory = new WebAssembly.Memory({ initial: 2 })
-const importObject = { env: { memory } }
 
-const response = fetch(wasmUrl)
+const response = fetch(new URL('./base128.wasm', import.meta.url))
 /** @type {WebAssembly.WebAssemblyInstantiatedSource} */
 let wis
 if (WebAssembly.instantiateStreaming) {
-    wis = await WebAssembly.instantiateStreaming(response, importObject)
+    wis = await WebAssembly.instantiateStreaming(response, { env: { memory } })
 } else {
     wis = await response
         .then(r => r.arrayBuffer())
-        .then(bytes => WebAssembly.instantiate(bytes, importObject))
+        .then(bytes => WebAssembly.instantiate(bytes, { env: { memory } }))
 }
 
 /**
@@ -57,19 +55,103 @@ function align16(n) {
     return n + (-n & 15)
 }
 
+/** @type {WeakRef<EncodeResult> | EncodeResult | null} */
+let lastPendingResult = null
+
+function getPendingResult() {
+    if (!lastPendingResult) return null
+    return typeof (/** @type {*} */ (lastPendingResult)).deref === 'function'
+        ? (/** @type {WeakRef<EncodeResult>} */ (lastPendingResult)).deref()
+        : (/** @type {EncodeResult} */ (lastPendingResult))
+}
+
+function materializePending() {
+    if (lastPendingResult !== null) {
+        const res = getPendingResult()
+        if (res && res._wasmOffset !== undefined) {
+            res.bytes
+        }
+        lastPendingResult = null
+    }
+}
+
 export class EncodeResult {
     /**
-     * @param {Uint8Array<ArrayBuffer>} bytes
+     * @param {Uint8Array<ArrayBuffer> | null} bytes
+     * @param {number} [wasmOffset]
+     * @param {number} [wasmLen]
      */
-    constructor(bytes) {
-        this.bytes = bytes
+    constructor(bytes, wasmOffset, wasmLen) {
+        if (wasmOffset !== undefined) {
+            /** @type {number | undefined} */
+            this._wasmOffset = wasmOffset
+            /** @type {number | undefined} */
+            this._wasmLen = wasmLen
+            Object.defineProperty(this, 'bytes', {
+                configurable: true,
+                enumerable: true,
+                get: () => {
+                    const off = this._wasmOffset
+                    const len = this._wasmLen
+                    const sliced = off !== undefined && len !== undefined
+                        ? new Uint8Array(memory.buffer, off, len).slice()
+                        : new Uint8Array(0)
+                    Object.defineProperty(this, 'bytes', {
+                        configurable: true,
+                        enumerable: true,
+                        writable: true,
+                        value: sliced
+                    })
+                    if (getPendingResult() === this) {
+                        lastPendingResult = null
+                    }
+                    delete this._wasmOffset
+                    delete this._wasmLen
+                    return sliced
+                },
+                set: (val) => {
+                    Object.defineProperty(this, 'bytes', {
+                        configurable: true,
+                        enumerable: true,
+                        writable: true,
+                        value: val
+                    })
+                    if (getPendingResult() === this) {
+                        lastPendingResult = null
+                    }
+                    delete this._wasmOffset
+                    delete this._wasmLen
+                }
+            })
+        } else {
+            /** @type {Uint8Array<ArrayBuffer>} */
+            this.bytes = /** @type {*} */ (bytes)
+        }
     }
     toString() {
+        if (this === getPendingResult() && this._wasmOffset !== undefined) {
+            return textDecoder.decode(new Uint8Array(memory.buffer, this._wasmOffset, this._wasmLen))
+        }
         return textDecoder.decode(this.bytes)
     }
     toJSTemplateLiterals() {
-        var bytes = this ? this.bytes : undefined
-        if (isUint8Array(bytes)) {
+        if (this === getPendingResult() && this._wasmOffset !== undefined) {
+            const inLen = this._wasmLen
+            if (inLen === 0) return '``'
+
+            const inOffset = this._wasmOffset
+            const maxOutBytes = inLen * 5 + 16
+            const outOffset = align16(inOffset + inLen)
+            ensureCapacity(outOffset + maxOutBytes)
+
+            const outLen = base128wasm_to_js_template_literals(inOffset, inLen, outOffset)
+            return textDecoder.decode(new Uint8Array(memory.buffer, outOffset, outLen))
+        }
+
+        materializePending()
+
+        const bytes = this.bytes
+        if (bytes) {
             const inLen = bytes.length
             if (inLen === 0) return '``'
 
@@ -83,10 +165,7 @@ export class EncodeResult {
             return textDecoder.decode(new Uint8Array(memory.buffer, outOffset, outLen))
         }
 
-        const str = typeof this === 'string' ? this : this?.toString()
-        if (typeof str !== 'string') {
-            throw TypeError("EncodeResult.prototype.toJSTemplateLiterals: 'this.bytes' must be a Uint8Array or Uint8ClampedArray")
-        }
+        const str = this.toString()
         const strLen = str.length
         if (strLen === 0) return '``'
 
@@ -131,6 +210,8 @@ export function encode(input) {
         return new EncodeResult(new Uint8Array(0))
     }
 
+    materializePending()
+
     const inOffset = heapBase
     const maxInBytes = isStr ? inLen * 3 : inLen
     const maxOutBytes = Math.ceil(maxInBytes / 0.875) + 16
@@ -149,8 +230,9 @@ export function encode(input) {
     ensureCapacity(actualOutOffset + Math.ceil(actualInBytes / 0.875) + 16)
 
     const outLen = base128wasm_encode(inOffset, actualInBytes, actualOutOffset)
-    const outBytes = new Uint8Array(memory.buffer, actualOutOffset, outLen).slice()
-    return new EncodeResult(outBytes)
+    const result = new EncodeResult(null, actualOutOffset, outLen)
+    lastPendingResult = typeof WeakRef === 'function' ? new WeakRef(result) : result
+    return result
 }
 
 /**
@@ -169,6 +251,8 @@ export function decode(input) {
     if ((inLen & 7) === 1) {
         throw SyntaxError("decode: invalid input")
     }
+
+    materializePending()
 
     const inOffset = heapBase
     const outOffset = align16(inOffset + inLen)
@@ -203,6 +287,8 @@ export function parseJSTemplateLiterals(input) {
     if (inLen < 2) {
         throw SyntaxError("parseJSTemplateLiterals: invalid input")
     }
+
+    materializePending()
 
     const inOffset = heapBase
     const maxInBytes = isStr ? inLen * 3 : inLen
