@@ -400,10 +400,12 @@ export function parseJSTemplateLiterals(input) {
 
 export const _impl = 'js'
 
-export default {
+export const Base128 = {
     _impl,
     EncodeResult,
     encode,
     decode,
     parseJSTemplateLiterals
 }
+
+export default Base128

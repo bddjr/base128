@@ -18,19 +18,19 @@ npm i base128-ascii@latest
 ```
 
 ```js
-import base128 from "base128-ascii"
+import Base128 from "base128-ascii"
 import fs from "fs"
 
 const input = fs.readFileSync("example.gz")
 
 // encode to Template literals
-const encodedTemplate = base128.encode(input).toJSTemplateLiterals()
+const encodedTemplate = Base128.encode(input).toJSTemplateLiterals()
 
 // Safe parse Template literals to string
-const jstlToStr = base128.parseJSTemplateLiterals(encodedTemplate)
+const jstlToStr = Base128.parseJSTemplateLiterals(encodedTemplate)
 
 // decode to bytes
-const decodedBytes = base128.decode(jstlToStr)
+const decodedBytes = Base128.decode(jstlToStr)
 ```
 
 ## Effect

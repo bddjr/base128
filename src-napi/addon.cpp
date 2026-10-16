@@ -2929,6 +2929,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
     set("_impl", Napi::String::New(env, "napi"));
 #endif
 
+    exports.Set("Base128", defaultObj);
     exports.Set("default", defaultObj);
 
     return exports;

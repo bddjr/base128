@@ -1,6 +1,6 @@
 //@ts-check
 
-import base128 from "base128-ascii";
+import Base128 from "base128-ascii";
 import browserBase128 from "../src/browser.mjs";
 import { decode as miniDecode } from "../src/mini-decode.mjs";
 import fs from "node:fs";
@@ -19,20 +19,20 @@ if (enableOutput && !fs.existsSync(outputDir))
 
 let allSuccess = true
 
-// Verify that the imported base128 is indeed a native implementation
-const nativeEncodeStr = String(base128.encode);
+// Verify that the imported Base128 is indeed a native implementation
+const nativeEncodeStr = String(Base128.encode);
 if (!nativeEncodeStr.includes("[native code]")) {
-    throw new Error(`Test failed: base128.encode is not a native implementation!\nGot: ${nativeEncodeStr}`);
+    throw new Error(`Test failed: Base128.encode is not a native implementation!\nGot: ${nativeEncodeStr}`);
 }
 
 const require = createRequire(import.meta.url);
 
 // Determine which binary main.cjs imported
-const isV8 = base128._impl === "v8";
+const isV8 = Base128._impl === "v8";
 const currentBindingName = isV8 ? "v8.node" : "napi.node";
 
 /**
- * @returns {typeof base128 | undefined}
+ * @returns {typeof Base128 | undefined}
  */
 function loadExtraBinding(filename) {
     let lastError = null;
@@ -66,8 +66,8 @@ function loadExtraBinding(filename) {
     throw err;
 }
 
-if (!isV8 && base128._impl !== "napi") {
-    throw new Error(`Expected napi.node implementation when V8 acceleration is not active, got: ${base128._impl}`);
+if (!isV8 && Base128._impl !== "napi") {
+    throw new Error(`Expected napi.node implementation when V8 acceleration is not active, got: ${Base128._impl}`);
 }
 
 const extraBase128 = isV8 && loadExtraBinding("napi.node");
@@ -76,7 +76,7 @@ if (extraBase128 && extraBase128._impl !== "napi") {
 }
 
 /**
- * @param {typeof base128} base128
+ * @param {typeof Base128} base128
  * @param {string} [implName]
  */
 function test(base128, implName = 'base128') {
@@ -144,8 +144,8 @@ function test(base128, implName = 'base128') {
 }
 
 // test native addon (via main.cjs)
-console.log(`################## base128 (${currentBindingName} via main.cjs) ##################`);
-test(base128, currentBindingName);
+console.log(`################## Base128 (${currentBindingName} via main.cjs) ##################`);
+test(Base128, currentBindingName);
 
 // test extra native addon (napi.node when v8.node was loaded via main.cjs)
 if (extraBase128) {
@@ -169,7 +169,7 @@ console.log('################## mini-decode.mjs ##################');
         console.log();
 
         console.log('mini-decode.mjs:');
-        const encodedString = base128.encode(file).toString();
+        const encodedString = Base128.encode(file).toString();
 
         console.time('time decode');
         const decoded = miniDecode(encodedString);
@@ -186,7 +186,7 @@ console.log('------------------');
 console.log('Parity / Cross-compatibility Check:');
 for (const { name } of fs.readdirSync(inputDir).map(name => ({ name }))) {
     const file = fs.readFileSync(inputDir + '/' + name);
-    const nativeRes = base128.encode(file);
+    const nativeRes = Base128.encode(file);
     const browserRes = browserBase128.encode(file);
 
     const bytesMatch = Buffer.from(nativeRes.bytes).equals(Buffer.from(browserRes.bytes));
@@ -198,7 +198,7 @@ for (const { name } of fs.readdirSync(inputDir).map(name => ({ name }))) {
     const jstlMatch = nativeRes.toJSTemplateLiterals() === browserRes.toJSTemplateLiterals();
     allSuccess &&= jstlMatch;
 
-    const cross1 = file.equals(base128.decode(browserRes.toString()));
+    const cross1 = file.equals(Base128.decode(browserRes.toString()));
     const cross2 = file.equals(browserBase128.decode(nativeRes.toString()));
     const cross3 = file.equals(miniDecode(nativeRes.toString()));
     allSuccess &&= cross1 && cross2 && cross3;
@@ -235,7 +235,7 @@ console.log('Cross-compatibility passed:', allSuccess)
 console.log('------------------')
 
 // Verify parseJSTemplateLiterals spec compliance (newline normalization, leading zeros in \u{...}, line continuations)
-for (const impl of [base128, browserBase128, extraBase128].filter(Boolean)) {
+for (const impl of [Base128, browserBase128, extraBase128].filter(Boolean)) {
     const specTests = [
         ['`hello\\r\\nworld`', 'hello\r\nworld'],
         ['`hello\r\nworld`', 'hello\nworld'],
@@ -481,7 +481,7 @@ for (const impl of [base128, browserBase128, extraBase128].filter(Boolean)) {
 
 // Verify EncodeResult.prototype.toString/toJSTemplateLiterals reject non-Uint8Array
 {
-    const res = base128.encode(new Uint8Array([1, 2, 3]));
+    const res = Base128.encode(new Uint8Array([1, 2, 3]));
     res.bytes = new Uint32Array([1, 2, 3]);
     let threw = false;
     try {
