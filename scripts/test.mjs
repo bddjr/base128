@@ -312,18 +312,94 @@ for (const impl of [base128, browserBase128, extraBase128].filter(Boolean)) {
         }
     }
 
-    // Verify decode non-string throws TypeError
+    // Verify decode non-string / non-Uint8Array throws TypeError
     for (const input of [123, null, undefined, {}, []]) {
         let threw = false;
         try {
             // @ts-ignore
             impl.decode(input);
         } catch (e) {
-            threw = e instanceof TypeError && e.message === "decode: input must be a string";
+            threw = e instanceof TypeError && e.message === "decode: input must be a string, Uint8Array or Uint8ClampedArray";
         }
         if (!threw) {
             allSuccess = false;
             throw new Error(`[${impl._impl}] Expected TypeError for non-string decode input: ${String(input)}`);
+        }
+    }
+
+    // Verify parseJSTemplateLiterals non-string / non-Uint8Array throws TypeError
+    for (const input of [123, null, undefined, {}, []]) {
+        let threw = false;
+        try {
+            // @ts-ignore
+            impl.parseJSTemplateLiterals(input);
+        } catch (e) {
+            threw = e instanceof TypeError && e.message === "parseJSTemplateLiterals: input must be a string, Uint8Array or Uint8ClampedArray";
+        }
+        if (!threw) {
+            allSuccess = false;
+            throw new Error(`[${impl._impl}] Expected TypeError for non-string parseJSTemplateLiterals input: ${String(input)}`);
+        }
+    }
+
+    // Verify decode and parseJSTemplateLiterals support Uint8Array and Uint8ClampedArray
+    {
+        const testData = new Uint8Array([0, 1, 2, 127, 255, 42, 99]);
+        const enc = impl.encode(testData);
+
+        // decode with Uint8Array
+        const dec1 = impl.decode(enc.bytes);
+        if (!Buffer.from(testData).equals(Buffer.from(dec1))) {
+            allSuccess = false;
+            throw new Error(`[${impl._impl}] decode(Uint8Array) failed`);
+        }
+
+        // decode with Uint8ClampedArray
+        const clampedBytes = new Uint8ClampedArray(enc.bytes);
+        const dec2 = impl.decode(clampedBytes);
+        if (!Buffer.from(testData).equals(Buffer.from(dec2))) {
+            allSuccess = false;
+            throw new Error(`[${impl._impl}] decode(Uint8ClampedArray) failed`);
+        }
+
+        // parseJSTemplateLiterals with Uint8Array
+        const jstlStr = enc.toJSTemplateLiterals();
+        const jstlBytes = Buffer.from(jstlStr);
+        const parsed1 = impl.parseJSTemplateLiterals(jstlBytes);
+        if (parsed1 !== enc.toString()) {
+            allSuccess = false;
+            throw new Error(`[${impl._impl}] parseJSTemplateLiterals(Uint8Array) failed`);
+        }
+
+        // parseJSTemplateLiterals with Uint8ClampedArray
+        const parsed2 = impl.parseJSTemplateLiterals(new Uint8ClampedArray(jstlBytes));
+        if (parsed2 !== enc.toString()) {
+            allSuccess = false;
+            throw new Error(`[${impl._impl}] parseJSTemplateLiterals(Uint8ClampedArray) failed`);
+        }
+
+        // decode invalid Uint8Array byte > 127
+        let threw = false;
+        try {
+            impl.decode(new Uint8Array([128, 0, 0, 0, 0, 0, 0, 0]));
+        } catch (e) {
+            threw = e instanceof SyntaxError && e.message === "decode: invalid input";
+        }
+        if (!threw) {
+            allSuccess = false;
+            throw new Error(`[${impl._impl}] Expected SyntaxError for Uint8Array with byte > 127`);
+        }
+
+        // decode invalid Uint8Array rem == 1
+        threw = false;
+        try {
+            impl.decode(new Uint8Array([65]));
+        } catch (e) {
+            threw = e instanceof SyntaxError && e.message === "decode: invalid input";
+        }
+        if (!threw) {
+            allSuccess = false;
+            throw new Error(`[${impl._impl}] Expected SyntaxError for Uint8Array with rem == 1`);
         }
     }
 }

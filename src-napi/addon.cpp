@@ -519,13 +519,12 @@ static inline bool DecodeImpl(const CharT* in, size_t full_chunks, size_t rem, u
 
 static Napi::Value Decode(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
-    if (info.Length() < 1 || !info[0].IsString()) {
-        Napi::TypeError::New(env, "decode: input must be a string").ThrowAsJavaScriptException();
+    if (info.Length() < 1) {
+        Napi::TypeError::New(env, "decode: input must be a string, Uint8Array or Uint8ClampedArray").ThrowAsJavaScriptException();
         return env.Null();
     }
 
-    napi_value str_val = info[0];
-    size_t utf16_len = 0;
+    size_t input_len = 0;
     size_t full_chunks;
     size_t rem;
     size_t out_len;
@@ -535,11 +534,32 @@ static Napi::Value Decode(const Napi::CallbackInfo& info) {
         return env.Null();
     };
 
-    auto newAB = [&env, &utf16_len, &full_chunks, &rem, &out_len]() {
-        full_chunks = utf16_len / 8;
-        out_len = utf16_len - full_chunks - (rem != 0);
+    auto newAB = [&env, &input_len, &full_chunks, &rem, &out_len]() {
+        full_chunks = input_len / 8;
+        out_len = input_len - full_chunks - (rem != 0);
         return Napi::ArrayBuffer::New(env, out_len);
     };
+
+    if (IsUint8Array(info[0])) {
+        void* in_ptr = nullptr;
+        napi_status status = napi_get_typedarray_info(env, info[0], nullptr, &input_len, &in_ptr, nullptr, nullptr);
+        NAPI_THROW_IF_FAILED(env, status, env.Null());
+        rem = input_len & 7;
+        if (rem == 1) return ThrowSyntaxError();
+        Napi::ArrayBuffer ab = newAB();
+        if (env.IsExceptionPending()) return env.Null();
+        uint8_t* out = reinterpret_cast<uint8_t*>(ab.Data());
+        bool success = DecodeImpl(static_cast<const uint8_t*>(in_ptr), full_chunks, rem, out);
+        if (!success) return ThrowSyntaxError();
+        return Napi::Uint8Array::New(env, out_len, ab, 0);
+    }
+
+    if (!info[0].IsString()) {
+        Napi::TypeError::New(env, "decode: input must be a string, Uint8Array or Uint8ClampedArray").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+
+    napi_value str_val = info[0];
 
 #ifdef USE_V8_ACCELERATION
     v8::Isolate* isolate = v8::Isolate::GetCurrent();
@@ -547,8 +567,8 @@ static Napi::Value Decode(const Napi::CallbackInfo& info) {
         v8::Local<v8::Value> v8_val = *reinterpret_cast<v8::Local<v8::Value>*>(&str_val);
         if (v8_val->IsString()) {
             v8::Local<v8::String> v8_str = v8_val.As<v8::String>();
-            utf16_len = v8_str->Length();
-            rem = utf16_len & 7;
+            input_len = v8_str->Length();
+            rem = input_len & 7;
             if (rem == 1) return ThrowSyntaxError();
             Napi::ArrayBuffer ab = newAB();
             if (env.IsExceptionPending()) return env.Null();
@@ -568,26 +588,25 @@ static Napi::Value Decode(const Napi::CallbackInfo& info) {
     }
 #endif
 
-    napi_status status = napi_get_value_string_utf16(env, str_val, nullptr, 0, &utf16_len);
+    napi_status status = napi_get_value_string_utf16(env, str_val, nullptr, 0, &input_len);
     NAPI_THROW_IF_FAILED(env, status, env.Null());
 
     size_t utf8_len = 0;
     status = napi_get_value_string_utf8(env, str_val, nullptr, 0, &utf8_len);
     NAPI_THROW_IF_FAILED(env, status, env.Null());
 
-    if (utf8_len != utf16_len) {
-        Napi::SyntaxError::New(env, "decode: invalid input").ThrowAsJavaScriptException();
-        return env.Null();
+    if (utf8_len != input_len) {
+        return ThrowSyntaxError();
     }
 
-    rem = utf16_len & 7;
+    rem = input_len & 7;
     if (rem == 1) return ThrowSyntaxError();
 
     Napi::ArrayBuffer ab = newAB();
     if (env.IsExceptionPending()) return env.Null();
     uint8_t* out = reinterpret_cast<uint8_t*>(ab.Data());
 
-    if (utf16_len == 0) {
+    if (input_len == 0) {
         return Napi::Uint8Array::New(env, 0, ab, 0);
     }
 
@@ -595,12 +614,12 @@ static Napi::Value Decode(const Napi::CallbackInfo& info) {
     char stack_buf[kStackCap];
     char* buf = stack_buf;
     std::string heap_buf;
-    if (utf16_len + 1 > kStackCap) {
-        heap_buf.resize(utf16_len + 1);
+    if (input_len + 1 > kStackCap) {
+        heap_buf.resize(input_len + 1);
         buf = heap_buf.data();
     }
     size_t copied = 0;
-    status = napi_get_value_string_latin1(env, str_val, buf, utf16_len + 1, &copied);
+    status = napi_get_value_string_latin1(env, str_val, buf, input_len + 1, &copied);
     NAPI_THROW_IF_FAILED(env, status, env.Null());
     bool success = DecodeImpl(reinterpret_cast<const uint8_t*>(buf), full_chunks, rem, out);
     if (!success) return ThrowSyntaxError();
@@ -1951,10 +1970,616 @@ found_escape:
     res.oom = false;
 }
 
+static inline size_t GetWhitespaceLengthUtf8(const uint8_t* input, size_t pos, size_t end) {
+    uint8_t b0 = input[pos];
+    if (b0 == ' ' || (b0 >= '\t' && b0 <= '\r')) return 1;
+    if (b0 == 0xC2 && pos + 1 <= end && input[pos + 1] == 0xA0) return 2;
+    if (pos + 2 <= end) {
+        uint8_t b1 = input[pos + 1], b2 = input[pos + 2];
+        if (b0 == 0xEF && b1 == 0xBB && b2 == 0xBF) return 3;
+        if (b0 == 0xE1 && b1 == 0x9A && b2 == 0x80) return 3;
+        if (b0 == 0xE3 && b1 == 0x80 && b2 == 0x80) return 3;
+        if (b0 == 0xE2) {
+            if (b1 == 0x81 && b2 == 0x9F) return 3;
+            if (b1 == 0x80) {
+                if ((b2 >= 0x80 && b2 <= 0x8A) || b2 == 0xA8 || b2 == 0xA9 || b2 == 0xAF) return 3;
+            }
+        }
+    }
+    return 0;
+}
+
+static inline size_t GetTrailingWhitespaceLengthUtf8(const uint8_t* input, size_t start, size_t end) {
+    uint8_t b = input[end];
+    if (b == ' ' || (b >= '\t' && b <= '\r')) return 1;
+    if (b == 0xA0 && end >= start + 1 && input[end - 1] == 0xC2) return 2;
+    if (end >= start + 2) {
+        uint8_t b0 = input[end - 2], b1 = input[end - 1];
+        if (b0 == 0xEF && b1 == 0xBB && b == 0xBF) return 3;
+        if (b0 == 0xE1 && b1 == 0x9A && b == 0x80) return 3;
+        if (b0 == 0xE3 && b1 == 0x80 && b == 0x80) return 3;
+        if (b0 == 0xE2) {
+            if (b1 == 0x81 && b == 0x9F) return 3;
+            if (b1 == 0x80) {
+                if ((b >= 0x80 && b <= 0x8A) || b == 0xA8 || b == 0xA9 || b == 0xAF) return 3;
+            }
+        }
+    }
+    return 0;
+}
+
+static inline bool HasNonAscii(const uint8_t* src, size_t len) {
+    size_t i = 0;
+#if defined(__x86_64__) || defined(_M_X64)
+    while (i + 16 <= len) {
+        __m128i v = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src + i));
+        if (_mm_movemask_epi8(v)) return true;
+        i += 16;
+    }
+#elif defined(__aarch64__) || defined(_M_ARM64)
+    const uint8x16_t v_mask = vdupq_n_u8(0x80);
+    while (i + 16 <= len) {
+        uint8x16_t v = vld1q_u8(src + i);
+        if (vmaxvq_u8(vandq_u8(v, v_mask))) return true;
+        i += 16;
+    }
+#elif (defined(__PPC64__) || defined(__ppc64__) || defined(_ARCH_PPC64)) && defined(__ALTIVEC__)
+    const __vector unsigned char v_mask = vec_splats(static_cast<unsigned char>(0x80));
+    const __vector unsigned char v_zero = vec_splats(static_cast<unsigned char>(0));
+    while (i + 16 <= len) {
+        __vector unsigned char v = vec_xl(0, reinterpret_cast<const unsigned char*>(src + i));
+        if (vec_any_ne(vec_and(v, v_mask), v_zero)) return true;
+        i += 16;
+    }
+#endif
+    while (i + 8 <= len) {
+        uint64_t v;
+        std::memcpy(&v, src + i, 8);
+        if (v & 0x8080808080808080ULL) return true;
+        i += 8;
+    }
+    while (i < len) {
+        if (src[i] >= 128) return true;
+        i++;
+    }
+    return false;
+}
+
+static void ParseJSTemplateLiteralsUtf8(const uint8_t* input, size_t len, ParsedStringResult& res) {
+    res.error = true;
+    res.oom = false;
+    res.buf = nullptr;
+    res.len = 0;
+
+    if (len < 2) return;
+
+    size_t start = 0;
+    size_t end = len - 1;
+
+    for (; start <= end;) {
+        size_t ws = GetWhitespaceLengthUtf8(input, start, end);
+        if (ws > 0) {
+            start += ws;
+            continue;
+        }
+        if (input[start] == '`') break;
+        return;
+    }
+
+    for (; end >= start;) {
+        size_t ws = GetTrailingWhitespaceLengthUtf8(input, start, end);
+        if (ws > 0) {
+            end -= ws;
+            continue;
+        }
+        if (input[end] == '`') break;
+        return;
+    }
+
+    if (start >= end) return;
+
+    size_t cap = end - start + 16;
+    char* buf8 = static_cast<char*>(std::malloc(cap));
+    if (!buf8) {
+        res.oom = true;
+        return;
+    }
+    char16_t* buf16 = nullptr;
+    bool is_one_byte = true;
+    size_t out_len = 0;
+
+    auto cleanup = [&]() {
+        if (is_one_byte) {
+            std::free(buf8);
+            buf8 = nullptr;
+        } else {
+            std::free(buf16);
+            buf16 = nullptr;
+        }
+    };
+
+    auto switchToTwoByte = [&]() -> bool {
+        buf16 = static_cast<char16_t*>(std::malloc(cap * sizeof(char16_t)));
+        if (!buf16) {
+            res.oom = true;
+            cleanup();
+            return false;
+        }
+        Widen8To16(reinterpret_cast<const uint8_t*>(buf8), buf16, out_len);
+        std::free(buf8);
+        buf8 = nullptr;
+        is_one_byte = false;
+        return true;
+    };
+
+    auto ensureCap = [&](size_t needed) -> bool {
+        if (out_len + needed > cap) {
+            cap = cap * 2 + needed + 128;
+            if (is_one_byte) {
+                char* nb = static_cast<char*>(std::realloc(buf8, cap));
+                if (!nb) {
+                    res.oom = true;
+                    cleanup();
+                    return false;
+                }
+                buf8 = nb;
+            } else {
+                char16_t* nb = static_cast<char16_t*>(std::realloc(buf16, cap * sizeof(char16_t)));
+                if (!nb) {
+                    res.oom = true;
+                    cleanup();
+                    return false;
+                }
+                buf16 = nb;
+            }
+        }
+        return true;
+    };
+
+    auto pushChar = [&](char16_t ch) -> bool {
+        if (is_one_byte) {
+            if (ch <= 255) {
+                buf8[out_len++] = static_cast<char>(ch);
+                return true;
+            }
+            if (!switchToTwoByte()) return false;
+        }
+        buf16[out_len++] = ch;
+        return true;
+    };
+
+    auto pushCodePoint = [&](uint32_t cp) -> bool {
+        if (cp <= 0xFFFF) {
+            return pushChar(static_cast<char16_t>(cp));
+        }
+        cp -= 0x10000;
+        if (is_one_byte) {
+            if (!switchToTwoByte()) return false;
+        }
+        buf16[out_len++] = static_cast<char16_t>(0xD800 + (cp >> 10));
+        buf16[out_len++] = static_cast<char16_t>(0xDC00 + (cp & 0x3FF));
+        return true;
+    };
+
+    auto appendUtf8Slice = [&](size_t chunkStart, size_t chunkEnd) -> bool {
+        size_t chunkLen = chunkEnd - chunkStart;
+        if (chunkLen == 0) return true;
+        if (!ensureCap(chunkLen + 16)) return false;
+
+        const uint8_t* p = input + chunkStart;
+        if (!HasNonAscii(p, chunkLen)) {
+            if (is_one_byte) {
+                FastCopyBytes(buf8 + out_len, reinterpret_cast<const char*>(p), chunkLen);
+            } else {
+                Widen8To16(p, buf16 + out_len, chunkLen);
+            }
+            out_len += chunkLen;
+            return true;
+        }
+
+        size_t k = chunkStart;
+        while (k < chunkEnd) {
+            uint8_t b0 = input[k++];
+            if (b0 < 0x80) {
+                if (!pushChar(b0)) return false;
+            } else if ((b0 & 0xE0) == 0xC0) {
+                if (k < chunkEnd && (input[k] & 0xC0) == 0x80) {
+                    uint8_t b1 = input[k++];
+                    uint32_t cp = ((b0 & 0x1F) << 6) | (b1 & 0x3F);
+                    if (cp >= 0x80) {
+                        if (!pushCodePoint(cp)) return false;
+                        continue;
+                    }
+                }
+                if (!pushChar(0xFFFD)) return false;
+            } else if ((b0 & 0xF0) == 0xE0) {
+                if (k + 1 < chunkEnd && (input[k] & 0xC0) == 0x80 && (input[k + 1] & 0xC0) == 0x80) {
+                    uint8_t b1 = input[k++];
+                    uint8_t b2 = input[k++];
+                    uint32_t cp = ((b0 & 0x0F) << 12) | ((b1 & 0x3F) << 6) | (b2 & 0x3F);
+                    if (cp >= 0x800 && !(cp >= 0xD800 && cp <= 0xDFFF)) {
+                        if (!pushCodePoint(cp)) return false;
+                        continue;
+                    }
+                }
+                if (!pushChar(0xFFFD)) return false;
+            } else if ((b0 & 0xF8) == 0xF0) {
+                if (k + 2 < chunkEnd && (input[k] & 0xC0) == 0x80 && (input[k + 1] & 0xC0) == 0x80 && (input[k + 2] & 0xC0) == 0x80) {
+                    uint8_t b1 = input[k++];
+                    uint8_t b2 = input[k++];
+                    uint8_t b3 = input[k++];
+                    uint32_t cp = ((b0 & 0x07) << 18) | ((b1 & 0x3F) << 12) | ((b2 & 0x3F) << 6) | (b3 & 0x3F);
+                    if (cp >= 0x10000 && cp <= 0x10FFFF) {
+                        if (!pushCodePoint(cp)) return false;
+                        continue;
+                    }
+                }
+                if (!pushChar(0xFFFD)) return false;
+            } else {
+                if (!pushChar(0xFFFD)) return false;
+            }
+        }
+        return true;
+    };
+
+#if defined(__x86_64__) || defined(_M_X64)
+    const __m128i v_slash  = _mm_set1_epi8('\\');
+    const __m128i v_grave  = _mm_set1_epi8('`');
+    const __m128i v_dollar = _mm_set1_epi8('$');
+    const __m128i v_cr     = _mm_set1_epi8('\r');
+#elif defined(__aarch64__) || defined(_M_ARM64)
+    const uint8x16_t v_slash  = vdupq_n_u8('\\');
+    const uint8x16_t v_grave  = vdupq_n_u8('`');
+    const uint8x16_t v_dollar = vdupq_n_u8('$');
+    const uint8x16_t v_cr     = vdupq_n_u8('\r');
+#elif (defined(__PPC64__) || defined(__ppc64__) || defined(_ARCH_PPC64)) && defined(__ALTIVEC__)
+    const __vector unsigned char v_slash  = vec_splats(static_cast<unsigned char>('\\'));
+    const __vector unsigned char v_grave  = vec_splats(static_cast<unsigned char>('`'));
+    const __vector unsigned char v_dollar = vec_splats(static_cast<unsigned char>('$'));
+    const __vector unsigned char v_cr     = vec_splats(static_cast<unsigned char>('\r'));
+    const __vector unsigned char zero     = vec_splats(static_cast<unsigned char>(0));
+#endif
+
+    size_t i = start + 1;
+    while (i < end) {
+        size_t chunkStart = i;
+
+#if defined(__x86_64__) || defined(_M_X64)
+        while (i + 16 <= end) {
+            __m128i v = _mm_loadu_si128(reinterpret_cast<const __m128i*>(input + i));
+            __m128i m_slash  = _mm_cmpeq_epi8(v, v_slash);
+            __m128i m_grave  = _mm_cmpeq_epi8(v, v_grave);
+            __m128i m_dollar = _mm_cmpeq_epi8(v, v_dollar);
+            __m128i m_cr     = _mm_cmpeq_epi8(v, v_cr);
+            __m128i any = _mm_or_si128(_mm_or_si128(m_slash, m_grave), _mm_or_si128(m_dollar, m_cr));
+            int mask = _mm_movemask_epi8(any);
+            if (mask != 0) {
+                bool stop = false;
+                while (mask != 0) {
+#if defined(_MSC_VER)
+                    unsigned long offset;
+                    _BitScanForward(&offset, mask);
+#else
+                    unsigned long offset = __builtin_ctz(mask);
+#endif
+                    size_t pos = i + offset;
+                    uint8_t c = input[pos];
+                    if (c == '$') {
+                        if (pos + 1 < end && input[pos + 1] == '{') {
+                            i = pos;
+                            stop = true;
+                            break;
+                        }
+                    } else {
+                        i = pos;
+                        stop = true;
+                        break;
+                    }
+                    mask &= mask - 1;
+                }
+                if (stop) goto found_escape;
+            }
+            i += 16;
+        }
+#elif defined(__aarch64__) || defined(_M_ARM64)
+        while (i + 16 <= end) {
+            uint8x16_t v = vld1q_u8(reinterpret_cast<const uint8_t*>(input + i));
+            uint8x16_t m_slash  = vceqq_u8(v, v_slash);
+            uint8x16_t m_grave  = vceqq_u8(v, v_grave);
+            uint8x16_t m_dollar = vceqq_u8(v, v_dollar);
+            uint8x16_t m_cr     = vceqq_u8(v, v_cr);
+            uint8x16_t any = vorrq_u8(vorrq_u8(m_slash, m_grave), vorrq_u8(m_dollar, m_cr));
+            uint64_t lo = vgetq_lane_u64(vreinterpretq_u64_u8(any), 0);
+            uint64_t hi = vgetq_lane_u64(vreinterpretq_u64_u8(any), 1);
+            if ((lo | hi) != 0) {
+                bool stop = false;
+                while (lo != 0) {
+#if defined(_MSC_VER)
+                    unsigned long offset;
+                    _BitScanForward64(&offset, lo);
+#else
+                    unsigned long offset = __builtin_ctzll(lo);
+#endif
+                    size_t pos = i + (offset >> 3);
+                    uint8_t c = input[pos];
+                    if (c == '$') {
+                        if (pos + 1 < end && input[pos + 1] == '{') {
+                            i = pos;
+                            stop = true;
+                            break;
+                        }
+                    } else {
+                        i = pos;
+                        stop = true;
+                        break;
+                    }
+                    lo &= ~(0xFFULL << (offset & ~7ULL));
+                }
+                if (stop) goto found_escape;
+
+                while (hi != 0) {
+#if defined(_MSC_VER)
+                    unsigned long offset;
+                    _BitScanForward64(&offset, hi);
+#else
+                    unsigned long offset = __builtin_ctzll(hi);
+#endif
+                    size_t pos = i + 8 + (offset >> 3);
+                    uint8_t c = input[pos];
+                    if (c == '$') {
+                        if (pos + 1 < end && input[pos + 1] == '{') {
+                            i = pos;
+                            stop = true;
+                            break;
+                        }
+                    } else {
+                        i = pos;
+                        stop = true;
+                        break;
+                    }
+                    hi &= ~(0xFFULL << (offset & ~7ULL));
+                }
+                if (stop) goto found_escape;
+            }
+            i += 16;
+        }
+#elif (defined(__PPC64__) || defined(__ppc64__) || defined(_ARCH_PPC64)) && defined(__ALTIVEC__)
+        while (i + 16 <= end) {
+            __vector unsigned char v = vec_xl(0, reinterpret_cast<const unsigned char*>(input + i));
+            auto m_slash  = vec_cmpeq(v, v_slash);
+            auto m_grave  = vec_cmpeq(v, v_grave);
+            auto m_dollar = vec_cmpeq(v, v_dollar);
+            auto m_cr     = vec_cmpeq(v, v_cr);
+            auto any = vec_or(vec_or(m_slash, m_grave), vec_or(m_dollar, m_cr));
+            if (vec_any_ne(((__vector unsigned char)any), zero)) {
+                bool stop = false;
+#if defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
+                uint64_t lo = vec_extract(((__vector unsigned long long)any), 0);
+                uint64_t hi = vec_extract(((__vector unsigned long long)any), 1);
+                while (lo != 0) {
+                    unsigned long offset = __builtin_ctzll(lo);
+                    size_t pos = i + (offset >> 3);
+                    uint8_t c = input[pos];
+                    if (c == '$') {
+                        if (pos + 1 < end && input[pos + 1] == '{') {
+                            i = pos; stop = true; break;
+                        }
+                    } else {
+                        i = pos; stop = true; break;
+                    }
+                    lo &= ~(0xFFULL << (offset & ~7ULL));
+                }
+                if (stop) goto found_escape;
+
+                while (hi != 0) {
+                    unsigned long offset = __builtin_ctzll(hi);
+                    size_t pos = i + 8 + (offset >> 3);
+                    uint8_t c = input[pos];
+                    if (c == '$') {
+                        if (pos + 1 < end && input[pos + 1] == '{') {
+                            i = pos; stop = true; break;
+                        }
+                    } else {
+                        i = pos; stop = true; break;
+                    }
+                    hi &= ~(0xFFULL << (offset & ~7ULL));
+                }
+                if (stop) goto found_escape;
+#else
+                uint64_t hi = vec_extract(((__vector unsigned long long)any), 0);
+                uint64_t lo = vec_extract(((__vector unsigned long long)any), 1);
+                while (hi != 0) {
+                    unsigned long offset = __builtin_clzll(hi);
+                    size_t pos = i + (offset >> 3);
+                    uint8_t c = input[pos];
+                    if (c == '$') {
+                        if (pos + 1 < end && input[pos + 1] == '{') {
+                            i = pos; stop = true; break;
+                        }
+                    } else {
+                        i = pos; stop = true; break;
+                    }
+                    hi &= ~(0xFF00000000000000ULL >> (offset & ~7ULL));
+                }
+                if (stop) goto found_escape;
+
+                while (lo != 0) {
+                    unsigned long offset = __builtin_clzll(lo);
+                    size_t pos = i + 8 + (offset >> 3);
+                    uint8_t c = input[pos];
+                    if (c == '$') {
+                        if (pos + 1 < end && input[pos + 1] == '{') {
+                            i = pos; stop = true; break;
+                        }
+                    } else {
+                        i = pos; stop = true; break;
+                    }
+                    lo &= ~(0xFF00000000000000ULL >> (offset & ~7ULL));
+                }
+                if (stop) goto found_escape;
+#endif
+            }
+            i += 16;
+        }
+#endif
+
+        while (i < end) {
+            uint8_t c = input[i];
+            if (c == '\\' || c == '`' || c == '\r') break;
+            if (c == '$' && i + 1 < end && input[i + 1] == '{') break;
+            i++;
+        }
+
+found_escape:
+        if (i > chunkStart) {
+            if (!appendUtf8Slice(chunkStart, i)) return;
+        }
+        if (i >= end) break;
+
+        uint8_t c = input[i];
+        if (c == '\\') {
+            i++;
+            if (i >= end) {
+                cleanup();
+                return;
+            }
+            uint8_t next = input[i++];
+            if (!ensureCap(8)) return;
+            switch (next) {
+                case 'r': if (!pushChar('\r')) return; break;
+                case 'n': if (!pushChar('\n')) return; break;
+                case 't': if (!pushChar('\t')) return; break;
+                case 'b': if (!pushChar('\b')) return; break;
+                case 'f': if (!pushChar('\f')) return; break;
+                case 'v': if (!pushChar('\v')) return; break;
+                case '0':
+                    if (i < end && input[i] >= '0' && input[i] <= '9') {
+                        cleanup();
+                        return;
+                    }
+                    if (!pushChar('\0')) return;
+                    break;
+                case 'x': {
+                    if (i + 2 > end) { cleanup(); return; }
+                    int h1 = HexVal(input[i++]);
+                    int h2 = HexVal(input[i++]);
+                    if (h1 == -1 || h2 == -1) { cleanup(); return; }
+                    if (!pushChar(static_cast<char16_t>((h1 << 4) | h2))) return;
+                    break;
+                }
+                case 'u': {
+                    if (i < end && input[i] == '{') {
+                        size_t startHex = ++i;
+                        uint32_t cp = 0;
+                        for (; i < end; i++) {
+                            uint8_t ch = input[i];
+                            if (ch == '}') {
+                                if (i == startHex) { cleanup(); return; }
+                                if (!pushCodePoint(cp)) return;
+                                i++;
+                                goto switch_break;
+                            }
+                            int hv = HexVal(ch);
+                            if (hv == -1) { cleanup(); return; }
+                            cp = (cp << 4) | hv;
+                            if (cp > 0x10FFFF) { cleanup(); return; }
+                        }
+                        cleanup();
+                        return;
+                    }
+                    if (i + 4 > end) { cleanup(); return; }
+                    int h1 = HexVal(input[i++]);
+                    int h2 = HexVal(input[i++]);
+                    int h3 = HexVal(input[i++]);
+                    int h4 = HexVal(input[i++]);
+                    if (h1 == -1 || h2 == -1 || h3 == -1 || h4 == -1) { cleanup(); return; }
+                    if (!pushChar(static_cast<char16_t>((h1 << 12) | (h2 << 8) | (h3 << 4) | h4))) return;
+                    break;
+                }
+                case '\r':
+                    if (i < end && input[i] == '\n') i++;
+                    break;
+                case '\n':
+                    break;
+                case 0xE2:
+                    if (i + 1 < end && input[i] == 0x80 && (input[i + 1] == 0xA8 || input[i + 1] == 0xA9)) {
+                        i += 2;
+                        break;
+                    }
+                    [[fallthrough]];
+                default: {
+                    if (next >= '1' && next <= '9') {
+                        cleanup();
+                        return;
+                    }
+                    if (next < 0x80) {
+                        if (!pushChar(next)) return;
+                    } else {
+                        i--;
+                        uint8_t b0 = input[i++];
+                        if ((b0 & 0xE0) == 0xC0) {
+                            if (i < end && (input[i] & 0xC0) == 0x80) {
+                                uint8_t b1 = input[i++];
+                                uint32_t cp = ((b0 & 0x1F) << 6) | (b1 & 0x3F);
+                                if (cp >= 0x80) {
+                                    if (!pushCodePoint(cp)) return;
+                                    break;
+                                }
+                            }
+                            if (!pushChar(0xFFFD)) return;
+                        } else if ((b0 & 0xF0) == 0xE0) {
+                            if (i + 1 < end && (input[i] & 0xC0) == 0x80 && (input[i + 1] & 0xC0) == 0x80) {
+                                uint8_t b1 = input[i++];
+                                uint8_t b2 = input[i++];
+                                uint32_t cp = ((b0 & 0x0F) << 12) | ((b1 & 0x3F) << 6) | (b2 & 0x3F);
+                                if (cp >= 0x800 && !(cp >= 0xD800 && cp <= 0xDFFF)) {
+                                    if (!pushCodePoint(cp)) return;
+                                    break;
+                                }
+                            }
+                            if (!pushChar(0xFFFD)) return;
+                        } else if ((b0 & 0xF8) == 0xF0) {
+                            if (i + 2 < end && (input[i] & 0xC0) == 0x80 && (input[i + 1] & 0xC0) == 0x80 && (input[i + 2] & 0xC0) == 0x80) {
+                                uint8_t b1 = input[i++];
+                                uint8_t b2 = input[i++];
+                                uint8_t b3 = input[i++];
+                                uint32_t cp = ((b0 & 0x07) << 18) | ((b1 & 0x3F) << 12) | ((b2 & 0x3F) << 6) | (b3 & 0x3F);
+                                if (cp >= 0x10000 && cp <= 0x10FFFF) {
+                                    if (!pushCodePoint(cp)) return;
+                                    break;
+                                }
+                            }
+                            if (!pushChar(0xFFFD)) return;
+                        } else {
+                            if (!pushChar(0xFFFD)) return;
+                        }
+                    }
+                    break;
+                }
+            }
+switch_break:;
+        } else if (c == '\r') {
+            if (!ensureCap(4)) return;
+            if (!pushChar('\n')) return;
+            i++;
+            if (i < end && input[i] == '\n') i++;
+        } else {
+            cleanup();
+            return;
+        }
+    }
+
+    res.buf = is_one_byte ? static_cast<void*>(buf8) : static_cast<void*>(buf16);
+    res.len = out_len;
+    res.is_one_byte = is_one_byte;
+    res.error = false;
+    res.oom = false;
+}
+
 static Napi::Value ParseJSTemplateLiterals(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
-    if (info.Length() < 1 || !info[0].IsString()) {
-        Napi::TypeError::New(env, "parseJSTemplateLiterals: input must be a string").ThrowAsJavaScriptException();
+    if (info.Length() < 1) {
+        Napi::TypeError::New(env, "parseJSTemplateLiterals: input must be a string, Uint8Array or Uint8ClampedArray").ThrowAsJavaScriptException();
         return env.Null();
     }
 
@@ -1964,66 +2589,78 @@ static Napi::Value ParseJSTemplateLiterals(const Napi::CallbackInfo& info) {
     };
 
     ParsedStringResult res;
-    napi_value str_val = info[0];
+
+    if (IsUint8Array(info[0])) {
+        void* in_ptr = nullptr;
+        size_t len = 0;
+        napi_status status = napi_get_typedarray_info(env, info[0], nullptr, &len, &in_ptr, nullptr, nullptr);
+        NAPI_THROW_IF_FAILED(env, status, env.Null());
+        ParseJSTemplateLiteralsUtf8(static_cast<const uint8_t*>(in_ptr), len, res);
+    } else if (info[0].IsString()) {
+        napi_value str_val = info[0];
 
 #ifdef USE_V8_ACCELERATION
-    v8::Isolate* isolate = v8::Isolate::GetCurrent();
-    if (isolate) {
-        v8::Local<v8::Value> v8_val = *reinterpret_cast<v8::Local<v8::Value>*>(&str_val);
-        if (v8_val->IsString()) {
-            v8::Local<v8::String> v8_str = v8_val.As<v8::String>();
-            v8::String::ValueView view(isolate, v8_str);
-            if (view.is_one_byte()) {
-                ParseJSTemplateLiteralsImpl(reinterpret_cast<const uint8_t*>(view.data8()), view.length(), res);
+        v8::Isolate* isolate = v8::Isolate::GetCurrent();
+        if (isolate) {
+            v8::Local<v8::Value> v8_val = *reinterpret_cast<v8::Local<v8::Value>*>(&str_val);
+            if (v8_val->IsString()) {
+                v8::Local<v8::String> v8_str = v8_val.As<v8::String>();
+                v8::String::ValueView view(isolate, v8_str);
+                if (view.is_one_byte()) {
+                    ParseJSTemplateLiteralsImpl(reinterpret_cast<const uint8_t*>(view.data8()), view.length(), res);
+                } else {
+                    ParseJSTemplateLiteralsImpl(reinterpret_cast<const char16_t*>(view.data16()), view.length(), res);
+                }
+                goto done;
+            }
+        }
+#endif
+
+        {
+            size_t utf16_len = 0;
+            napi_status status = napi_get_value_string_utf16(env, str_val, nullptr, 0, &utf16_len);
+            NAPI_THROW_IF_FAILED(env, status, env.Null());
+
+            size_t utf8_len = 0;
+            status = napi_get_value_string_utf8(env, str_val, nullptr, 0, &utf8_len);
+            NAPI_THROW_IF_FAILED(env, status, env.Null());
+
+            if (utf8_len == utf16_len) {
+                constexpr size_t kStackCap = 1024;
+                char stack_buf[kStackCap];
+                char* buf = stack_buf;
+                std::string heap_buf;
+                if (utf16_len + 1 > kStackCap) {
+                    heap_buf.resize(utf16_len + 1);
+                    buf = heap_buf.data();
+                }
+                size_t copied = 0;
+                status = napi_get_value_string_latin1(env, str_val, buf, utf16_len + 1, &copied);
+                NAPI_THROW_IF_FAILED(env, status, env.Null());
+                ParseJSTemplateLiteralsImpl(reinterpret_cast<const uint8_t*>(buf), utf16_len, res);
             } else {
-                ParseJSTemplateLiteralsImpl(reinterpret_cast<const char16_t*>(view.data16()), view.length(), res);
+                constexpr size_t kStackCap16 = 512;
+                char16_t stack_buf16[kStackCap16];
+                char16_t* buf16 = stack_buf16;
+                std::u16string heap_buf16;
+                if (utf16_len + 1 > kStackCap16) {
+                    heap_buf16.resize(utf16_len + 1);
+                    buf16 = heap_buf16.data();
+                }
+                size_t copied = 0;
+                status = napi_get_value_string_utf16(env, str_val, buf16, utf16_len + 1, &copied);
+                NAPI_THROW_IF_FAILED(env, status, env.Null());
+                ParseJSTemplateLiteralsImpl(reinterpret_cast<const char16_t*>(buf16), utf16_len, res);
             }
-            goto done;
         }
-    }
-#endif
-
-    {
-        size_t utf16_len = 0;
-        napi_status status = napi_get_value_string_utf16(env, str_val, nullptr, 0, &utf16_len);
-        NAPI_THROW_IF_FAILED(env, status, env.Null());
-
-        size_t utf8_len = 0;
-        status = napi_get_value_string_utf8(env, str_val, nullptr, 0, &utf8_len);
-        NAPI_THROW_IF_FAILED(env, status, env.Null());
-
-        if (utf8_len == utf16_len) {
-            constexpr size_t kStackCap = 1024;
-            char stack_buf[kStackCap];
-            char* buf = stack_buf;
-            std::string heap_buf;
-            if (utf16_len + 1 > kStackCap) {
-                heap_buf.resize(utf16_len + 1);
-                buf = heap_buf.data();
-            }
-            size_t copied = 0;
-            status = napi_get_value_string_latin1(env, str_val, buf, utf16_len + 1, &copied);
-            NAPI_THROW_IF_FAILED(env, status, env.Null());
-            ParseJSTemplateLiteralsImpl(reinterpret_cast<const uint8_t*>(buf), utf16_len, res);
-        } else {
-            constexpr size_t kStackCap16 = 512;
-            char16_t stack_buf16[kStackCap16];
-            char16_t* buf16 = stack_buf16;
-            std::u16string heap_buf16;
-            if (utf16_len + 1 > kStackCap16) {
-                heap_buf16.resize(utf16_len + 1);
-                buf16 = heap_buf16.data();
-            }
-            size_t copied = 0;
-            status = napi_get_value_string_utf16(env, str_val, buf16, utf16_len + 1, &copied);
-            NAPI_THROW_IF_FAILED(env, status, env.Null());
-            ParseJSTemplateLiteralsImpl(reinterpret_cast<const char16_t*>(buf16), utf16_len, res);
-        }
-    }
 
 #ifdef USE_V8_ACCELERATION
-done:
+    done:;
 #endif
+    } else {
+        Napi::TypeError::New(env, "parseJSTemplateLiterals: input must be a string, Uint8Array or Uint8ClampedArray").ThrowAsJavaScriptException();
+        return env.Null();
+    }
     if (res.oom) {
         Napi::Error::New(env, "Out of memory").ThrowAsJavaScriptException();
         return env.Null();
