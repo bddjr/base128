@@ -2653,14 +2653,14 @@ static Napi::Value ParseJSTemplateLiterals(const Napi::CallbackInfo& info) {
                 ParseJSTemplateLiteralsImpl(reinterpret_cast<const char16_t*>(buf16), utf16_len, res);
             }
         }
-
-#ifdef USE_V8_ACCELERATION
-    done:;
-#endif
     } else {
         Napi::TypeError::New(env, "parseJSTemplateLiterals: input must be a string, Uint8Array or Uint8ClampedArray").ThrowAsJavaScriptException();
         return env.Null();
     }
+
+#ifdef USE_V8_ACCELERATION
+done:
+#endif
     if (res.oom) {
         Napi::Error::New(env, "Out of memory").ThrowAsJavaScriptException();
         return env.Null();
