@@ -51,7 +51,7 @@ function isUint8Array(input) {
  * @param {number} maxInBytes
  */
 function writeInput(input, inOffset, maxInBytes) {
-    if (typeof input === 'string') {
+    if (typeof input == 'string') {
         return textEncoder.encodeInto(input, new Uint8Array(memory.buffer, inOffset, maxInBytes)).written
     }
     new Uint8Array(memory.buffer, inOffset, input.length).set(input)
@@ -71,7 +71,7 @@ let lastPendingResult = null
 
 function getPendingResult() {
     return lastPendingResult
-        ? typeof (/** @type {*} */ (lastPendingResult)).deref === 'function'
+        ? typeof (/** @type {*} */ (lastPendingResult)).deref == 'function'
             ? (/** @type {WeakRef<EncodeResult>} */ (lastPendingResult)).deref()
             : (/** @type {EncodeResult} */ (lastPendingResult))
         : null
@@ -123,8 +123,7 @@ export class EncodeResult {
                 set: defineValue
             })
         } else {
-            /** @type {Uint8Array<ArrayBuffer>} */
-            this.bytes = /** @type {*} */ (bytes)
+            this.bytes = bytes
         }
     }
     toString() {
@@ -147,7 +146,7 @@ export class EncodeResult {
         const inLen = input.length
         if (!inLen) return '``'
 
-        const isStr = typeof input === 'string'
+        const isStr = typeof input == 'string'
         const maxInBytes = isStr ? inLen * 3 : inLen
         const outOffset = align16(heapBase + maxInBytes)
         ensureCapacity(outOffset + maxInBytes * 5 + 16)
@@ -185,7 +184,7 @@ function ensureCapacity(neededBytes) {
  * @param {string | Uint8Array | Uint8ClampedArray} input
  */
 export function encode(input) {
-    const isStr = typeof input === 'string'
+    const isStr = typeof input == 'string'
     if (!isStr && !isUint8Array(input))
         throw TypeError("encode: input must be a string, Uint8Array or Uint8ClampedArray")
     const inLen = input.length
@@ -204,7 +203,7 @@ export function encode(input) {
 
     const outLen = base128wasm_encode(inOffset, actualInBytes, actualOutOffset)
     const result = new EncodeResult(null, actualOutOffset, outLen)
-    lastPendingResult = typeof WeakRef === 'function' ? new WeakRef(result) : result
+    lastPendingResult = typeof WeakRef == 'function' ? new WeakRef(result) : result
     return result
 }
 
@@ -212,7 +211,7 @@ export function encode(input) {
  * @param {string | Uint8Array | Uint8ClampedArray} input
  */
 export function decode(input) {
-    const isStr = typeof input === 'string'
+    const isStr = typeof input == 'string'
     if (!isStr && !isUint8Array(input))
         throw TypeError("decode: input must be a string, Uint8Array or Uint8ClampedArray")
     const inLen = input.length
@@ -245,7 +244,7 @@ export function decode(input) {
  * @param {string | Uint8Array | Uint8ClampedArray} input
  */
 export function parseJSTemplateLiterals(input) {
-    const isStr = typeof input === 'string'
+    const isStr = typeof input == 'string'
     if (!isStr && !isUint8Array(input))
         throw TypeError("parseJSTemplateLiterals: input must be a string, Uint8Array or Uint8ClampedArray")
     const inLen = input.length
