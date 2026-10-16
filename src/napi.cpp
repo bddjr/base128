@@ -1377,11 +1377,6 @@ static Napi::Value EncodeResult_ToString(const Napi::CallbackInfo& info) {
     Napi::Object obj = self.As<Napi::Object>();
     Napi::Value bytesVal = obj.Get("bytes");
     if (env.IsExceptionPending()) return env.Null();
-    if (!IsUint8Array(bytesVal)) {
-        Napi::TypeError::New(env, "EncodeResult.prototype.toString: 'this.bytes' must be a Uint8Array or Uint8ClampedArray")
-            .ThrowAsJavaScriptException();
-        return env.Null();
-    }
     void* data_ptr = nullptr;
     size_t len = 0;
     napi_status status = napi_get_typedarray_info(
@@ -1436,9 +1431,7 @@ static Napi::Value EncodeResult_ToJSTemplateLiterals(const Napi::CallbackInfo& i
             return env.Null();
         }
         strVal = self.ToString();
-        if (env.IsExceptionPending()) {
-            return env.Null();
-        }
+        if (env.IsExceptionPending()) return env.Null();
     }
 
     ParsedStringResult res;

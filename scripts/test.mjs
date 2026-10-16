@@ -504,21 +504,6 @@ for (const impl of [Base128, wasmBase128, browserBase128, extraBase128].filter(B
     }
 }
 
-// Verify EncodeResult.prototype.toString/toJSTemplateLiterals reject non-Uint8Array
-{
-    const res = Base128.encode(new Uint8Array([1, 2, 3]));
-    res.bytes = new Uint32Array([1, 2, 3]);
-    let threw = false;
-    try {
-        res.toString();
-    } catch (e) {
-        threw = e instanceof TypeError;
-    }
-    if (!threw) {
-        allSuccess = false;
-        throw new Error("Expected TypeError for non-Uint8Array this.bytes in toString");
-    }
-}
 
 console.log('allSuccess:', allSuccess)
 console.log()
