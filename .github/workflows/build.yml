@@ -148,9 +148,7 @@ jobs:
           pnpm i
 
       - shell: cpa.sh {0}
-        run: pnpm test
-        env:
-          IGNORE_BUILD_WASM: "true"
+        run: IGNORE_BUILD_WASM=true pnpm test
 
       - name: Prepare subpackage freebsd-x64
         shell: cpa.sh {0}
