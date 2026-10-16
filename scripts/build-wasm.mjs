@@ -2,6 +2,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { execSync } from "node:child_process";
 
+if (process.env.IGNORE_BUILD_WASM === "true") {
+    console.log("[build-wasm.mjs] ignore build wasm");
+    process.exit();
+}
+
 const rootDir = path.resolve(import.meta.dirname, "..");
 const wasmDir = path.join(rootDir, "wasm");
 const cppSource = path.join(wasmDir, "base128.cpp");

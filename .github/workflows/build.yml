@@ -16,14 +16,19 @@ jobs:
             name: linux-x64-gnu
           - os: ubuntu-24.04-arm
             name: linux-arm64-gnu
+            ignore_build_wasm: "true"
           - os: windows-latest
             name: win32-x64-msvc
+            ignore_build_wasm: "true"
           - os: windows-11-arm
             name: win32-arm64-msvc
+            ignore_build_wasm: "true"
           - os: macos-latest
             name: darwin-arm64
+            ignore_build_wasm: "true"
           - os: macos-15-intel
             name: darwin-x64
+            ignore_build_wasm: "true"
     steps:
       - uses: actions/checkout@v7
 
@@ -35,6 +40,8 @@ jobs:
           install: true
 
       - run: pnpm test
+        env:
+          IGNORE_BUILD_WASM: ${{ matrix.ignore_build_wasm }}
 
       - name: Setup Deno
         uses: denoland/setup-deno@v2
@@ -101,6 +108,7 @@ jobs:
         run: |
           docker run --rm \
             --platform ${{ matrix.platform }} \
+            -e IGNORE_BUILD_WASM=true \
             -v "$PWD":/workspace \
             -w /workspace \
             ${{ matrix.image }} \
@@ -141,6 +149,8 @@ jobs:
 
       - shell: cpa.sh {0}
         run: pnpm test
+        env:
+          IGNORE_BUILD_WASM: "true"
 
       - name: Prepare subpackage freebsd-x64
         shell: cpa.sh {0}
