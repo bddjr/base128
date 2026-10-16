@@ -119,6 +119,7 @@ static inline bool CpuHasFastBMI2() {
     }();
     return has_fast_bmi2;
 }
+#endif
 
 static inline bool IsUint8Array(const Napi::Value& val) {
     if (!val.IsTypedArray()) return false;
@@ -622,6 +623,7 @@ static inline bool Decode8to7_Char16(const char16_t* in, uint8_t* out, bool can_
     return true;
 }
 
+#if defined(__x86_64__) || defined(_M_X64)
 #if defined(__GNUC__) || defined(__clang__)
 __attribute__((target("bmi2")))
 #endif

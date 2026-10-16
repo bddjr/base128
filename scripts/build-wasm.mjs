@@ -49,6 +49,7 @@ console.log(`[build-wasm] Compiling ${cppSource} to ${wasmOutput} with ${clang}.
 const compileCmd = [
     `"${clang}"`,
     "--target=wasm32",
+    "-std=c++20",
     "-O3",
     "-flto",
     "-nostdlib",
