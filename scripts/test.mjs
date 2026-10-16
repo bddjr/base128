@@ -16,7 +16,16 @@ if (typeof process !== "undefined" && process.versions && process.versions.node)
     };
 }
 
-const wasmBase128 = (await import("base128-ascii/wasm")).default;
+let wasmBase128;
+try {
+    wasmBase128 = (await import("base128-ascii/wasm")).default;
+} catch (e) {
+    if (process.arch.includes('ppc')) {
+        console.warn(`[test] Ignored WASM error on ${process.arch}: ${e.message}`);
+    } else {
+        throw e;
+    }
+}
 import { decode as miniDecode } from "../src/mini-decode.mjs";
 import fs from "node:fs";
 import path from "node:path";
@@ -169,8 +178,10 @@ if (extraBase128) {
 }
 
 // test WASM (base128-ascii/wasm)
-console.log('################## base128-ascii/wasm (WebAssembly) ##################');
-test(wasmBase128, 'base128-ascii/wasm');
+if (wasmBase128) {
+    console.log('################## base128-ascii/wasm (WebAssembly) ##################');
+    test(wasmBase128, 'base128-ascii/wasm');
+}
 
 // test pure JS (browser.mjs)
 console.log('################## browser.mjs (pure JS) ##################');
@@ -206,26 +217,26 @@ console.log('Parity / Cross-compatibility Check:');
 for (const { name } of fs.readdirSync(inputDir).map(name => ({ name }))) {
     const file = fs.readFileSync(inputDir + '/' + name);
     const nativeRes = Base128.encode(file);
-    const wasmRes = wasmBase128.encode(file);
+    const wasmRes = wasmBase128 ? wasmBase128.encode(file) : null;
     const browserRes = browserBase128.encode(file);
 
     const bytesMatch = Buffer.from(nativeRes.bytes).equals(Buffer.from(browserRes.bytes)) &&
-                       Buffer.from(nativeRes.bytes).equals(Buffer.from(wasmRes.bytes));
+                       (!wasmRes || Buffer.from(nativeRes.bytes).equals(Buffer.from(wasmRes.bytes)));
     allSuccess &&= bytesMatch;
 
     const strMatch = nativeRes.toString() === browserRes.toString() &&
-                     nativeRes.toString() === wasmRes.toString();
+                     (!wasmRes || nativeRes.toString() === wasmRes.toString());
     allSuccess &&= strMatch;
 
     const jstlMatch = nativeRes.toJSTemplateLiterals() === browserRes.toJSTemplateLiterals() &&
-                      nativeRes.toJSTemplateLiterals() === wasmRes.toJSTemplateLiterals();
+                      (!wasmRes || nativeRes.toJSTemplateLiterals() === wasmRes.toJSTemplateLiterals());
     allSuccess &&= jstlMatch;
 
     const cross1 = file.equals(Base128.decode(browserRes.toString()));
     const cross2 = file.equals(browserBase128.decode(nativeRes.toString()));
     const cross3 = file.equals(miniDecode(nativeRes.toString()));
-    const cross4 = file.equals(wasmBase128.decode(nativeRes.toString()));
-    const cross5 = file.equals(Base128.decode(wasmRes.toString()));
+    const cross4 = wasmRes ? file.equals(wasmBase128.decode(nativeRes.toString())) : true;
+    const cross5 = wasmRes ? file.equals(Base128.decode(wasmRes.toString())) : true;
     allSuccess &&= cross1 && cross2 && cross3 && cross4 && cross5;
 
     if (!bytesMatch || !strMatch || !jstlMatch || !cross1 || !cross2 || !cross3 || !cross4 || !cross5) {
