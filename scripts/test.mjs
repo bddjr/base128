@@ -312,6 +312,81 @@ for (const impl of [base128, browserBase128, extraBase128].filter(Boolean)) {
         }
     }
 
+    // Verify encode non-string / non-Uint8Array throws TypeError
+    for (const input of [123, null, undefined, {}, []]) {
+        let threw = false;
+        try {
+            // @ts-ignore
+            impl.encode(input);
+        } catch (e) {
+            threw = e instanceof TypeError && e.message === "encode: input must be a string, Uint8Array or Uint8ClampedArray";
+        }
+        if (!threw) {
+            allSuccess = false;
+            throw new Error(`[${impl._impl}] Expected TypeError for invalid encode input: ${String(input)}`);
+        }
+    }
+
+    // Verify encode(string) automatically encodes to UTF-8
+    const stringInputs = [
+        "",
+        "a",
+        "Hello, World!",
+        "1234567",
+        "12345678",
+        "café naïve",
+        "你好，世界！🌍",
+        "`${test}\\r\\n\0`",
+        "A".repeat(2000), // > 1024 bytes (tests stack vs heap buffer)
+        "测试".repeat(500),
+    ];
+    for (const str of stringInputs) {
+        const expectedBytes = impl.encode(new TextEncoder().encode(str)).bytes;
+        const actualEnc = impl.encode(str);
+        if (!Buffer.from(expectedBytes).equals(Buffer.from(actualEnc.bytes))) {
+            allSuccess = false;
+            throw new Error(`[${impl._impl}] encode(string) mismatch for: ${JSON.stringify(str.slice(0, 30))}`);
+        }
+        // Roundtrip check
+        const decoded = new TextDecoder().decode(impl.decode(actualEnc.bytes));
+        if (decoded !== str) {
+            allSuccess = false;
+            throw new Error(`[${impl._impl}] encode(string) roundtrip failed for: ${JSON.stringify(str.slice(0, 30))}`);
+        }
+    }
+
+    // Verify encode supports Uint8ClampedArray
+    {
+        const raw = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+        const u8 = new Uint8Array(raw);
+        const clamped = new Uint8ClampedArray(raw);
+        const encU8 = impl.encode(u8);
+        const encClamped = impl.encode(clamped);
+        if (!Buffer.from(encU8.bytes).equals(Buffer.from(encClamped.bytes))) {
+            allSuccess = false;
+            throw new Error(`[${impl._impl}] encode(Uint8ClampedArray) mismatch`);
+        }
+    }
+
+    // Verify encode with TwoByte ASCII string (view.is_one_byte() is false, but all ASCII)
+    {
+        for (const len of [0, 1, 6, 7, 8, 13, 14, 15, 100, 2000]) {
+            const rawAscii = "A".repeat(len);
+            const twoByteAscii = ('\u0100' + rawAscii).slice(1);
+            const enc1 = impl.encode(twoByteAscii);
+            const encExpected = impl.encode(new TextEncoder().encode(twoByteAscii));
+            if (!Buffer.from(enc1.bytes).equals(Buffer.from(encExpected.bytes))) {
+                allSuccess = false;
+                throw new Error(`[${impl._impl}] encode(TwoByte ASCII string, len=${len}) mismatch`);
+            }
+            const dec = new TextDecoder().decode(impl.decode(enc1.bytes));
+            if (dec !== twoByteAscii) {
+                allSuccess = false;
+                throw new Error(`[${impl._impl}] encode(TwoByte ASCII string, len=${len}) roundtrip mismatch`);
+            }
+        }
+    }
+
     // Verify decode non-string / non-Uint8Array throws TypeError
     for (const input of [123, null, undefined, {}, []]) {
         let threw = false;

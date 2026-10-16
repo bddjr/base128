@@ -39,18 +39,19 @@ export class EncodeResult {
 }
 
 /**
- * @param {Uint8Array | Uint8ClampedArray} input
+ * @param {string | Uint8Array | Uint8ClampedArray} input
  */
 export function encode(input) {
-    if (input == null)
-        throw TypeError("encode: input must be a Uint8Array or Uint8ClampedArray")
-    // Use Symbol.toStringTag to support recognizing objects from iframes
-    switch (input[Symbol.toStringTag]) {
-        case "Uint8Array":
-        case "Uint8ClampedArray":
-            break
-        default:
-            throw TypeError("encode: input must be a Uint8Array or Uint8ClampedArray")
+    a: if (typeof input == 'string') {
+        input = new TextEncoder().encode(input)
+    } else {
+        // Use Symbol.toStringTag to support recognizing objects from iframes
+        if (input) switch (input[Symbol.toStringTag]) {
+            case "Uint8Array":
+            case "Uint8ClampedArray":
+                break a
+        }
+        throw TypeError("encode: input must be a string, Uint8Array or Uint8ClampedArray")
     }
     const il = input.length
         , rem = il % 7

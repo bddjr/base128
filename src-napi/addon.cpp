@@ -178,6 +178,43 @@ static inline void Widen8To16(const uint8_t* src, char16_t* dst, size_t len) {
 #endif
 }
 
+static inline bool HasNonAscii(const uint8_t* src, size_t len) {
+    size_t i = 0;
+#if defined(__x86_64__) || defined(_M_X64)
+    while (i + 16 <= len) {
+        __m128i v = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src + i));
+        if (_mm_movemask_epi8(v)) return true;
+        i += 16;
+    }
+#elif defined(__aarch64__) || defined(_M_ARM64)
+    const uint8x16_t v_mask = vdupq_n_u8(0x80);
+    while (i + 16 <= len) {
+        uint8x16_t v = vld1q_u8(src + i);
+        if (vmaxvq_u8(vandq_u8(v, v_mask))) return true;
+        i += 16;
+    }
+#elif (defined(__PPC64__) || defined(__ppc64__) || defined(_ARCH_PPC64)) && defined(__ALTIVEC__)
+    const __vector unsigned char v_mask = vec_splats(static_cast<unsigned char>(0x80));
+    const __vector unsigned char v_zero = vec_splats(static_cast<unsigned char>(0));
+    while (i + 16 <= len) {
+        __vector unsigned char v = vec_xl(0, reinterpret_cast<const unsigned char*>(src + i));
+        if (vec_any_ne(vec_and(v, v_mask), v_zero)) return true;
+        i += 16;
+    }
+#endif
+    while (i + 8 <= len) {
+        uint64_t v;
+        std::memcpy(&v, src + i, 8);
+        if (v & 0x8080808080808080ULL) return true;
+        i += 8;
+    }
+    while (i < len) {
+        if (src[i] >= 128) return true;
+        i++;
+    }
+    return false;
+}
+
 static Napi::Value MakeLatin1String(napi_env env, char* buf, size_t len) {
 #if NAPI_VERSION >= 10
     if (len >= 1024) {
@@ -256,14 +293,28 @@ static Napi::Value MakeUtf16String(napi_env env, char16_t* buf, size_t len) {
 // ============================================================================
 
 
-static inline void Encode7to8_SWAR(const uint8_t* src, uint8_t* dst, bool can_read_8) {
-    uint64_t in_val = 0;
-    std::memcpy(&in_val, src, can_read_8 ? 8 : 7);
+static inline void Encode7to8_SWAR_FromVal(uint64_t in_val, uint8_t* dst) {
     uint64_t x = ToBE64(in_val) >> 8; // 56 bits in low bits
     x = ((x & 0x00FFFFFFF0000000ULL) << 4) | (x & 0x000000000FFFFFFFULL);
     x = ((x & 0x0FFFC0000FFFC000ULL) << 2) | (x & 0x00003FFF00003FFFULL);
     x = ((x & 0x3F803F803F803F80ULL) << 1) | (x & 0x007F007F007F007FULL);
     uint64_t out_val = ToBE64(x);
+    std::memcpy(dst, &out_val, 8);
+}
+
+static inline void Encode7to8_SWAR(const uint8_t* src, uint8_t* dst, bool can_read_8) {
+    uint64_t in_val = 0;
+    std::memcpy(&in_val, src, can_read_8 ? 8 : 7);
+    Encode7to8_SWAR_FromVal(in_val, dst);
+}
+
+#if defined(__x86_64__) || defined(_M_X64)
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((target("bmi2")))
+#endif
+static inline void Encode7to8_BMI2_FromVal(uint64_t in_val, uint8_t* dst) {
+    uint64_t src_56 = BSwap64(in_val) >> 8;
+    uint64_t out_val = BSwap64(_pdep_u64(src_56, 0x7F7F7F7F7F7F7F7FULL));
     std::memcpy(dst, &out_val, 8);
 }
 
@@ -279,31 +330,23 @@ static void EncodeLoop_BMI2(const uint8_t* src, uint8_t* dst, size_t full_chunks
         std::memcpy(&in2, src + 14, 8);
         std::memcpy(&in3, src + 21, 8);
 
-        uint64_t out0 = BSwap64(_pdep_u64(BSwap64(in0) >> 8, 0x7F7F7F7F7F7F7F7FULL));
-        uint64_t out1 = BSwap64(_pdep_u64(BSwap64(in1) >> 8, 0x7F7F7F7F7F7F7F7FULL));
-        uint64_t out2 = BSwap64(_pdep_u64(BSwap64(in2) >> 8, 0x7F7F7F7F7F7F7F7FULL));
-        uint64_t out3 = BSwap64(_pdep_u64(BSwap64(in3) >> 8, 0x7F7F7F7F7F7F7F7FULL));
-
-        std::memcpy(dst, &out0, 8);
-        std::memcpy(dst + 8, &out1, 8);
-        std::memcpy(dst + 16, &out2, 8);
-        std::memcpy(dst + 24, &out3, 8);
+        Encode7to8_BMI2_FromVal(in0, dst);
+        Encode7to8_BMI2_FromVal(in1, dst + 8);
+        Encode7to8_BMI2_FromVal(in2, dst + 16);
+        Encode7to8_BMI2_FromVal(in3, dst + 24);
     }
     for (; c + 1 < full_chunks; c++, src += 7, dst += 8) {
         uint64_t in_val;
         std::memcpy(&in_val, src, 8);
-        uint64_t src_56 = BSwap64(in_val) >> 8;
-        uint64_t out_val = BSwap64(_pdep_u64(src_56, 0x7F7F7F7F7F7F7F7FULL));
-        std::memcpy(dst, &out_val, 8);
+        Encode7to8_BMI2_FromVal(in_val, dst);
     }
     if (c < full_chunks) {
         uint64_t in_val = 0;
         std::memcpy(&in_val, src, 7);
-        uint64_t src_56 = BSwap64(in_val) >> 8;
-        uint64_t out_val = BSwap64(_pdep_u64(src_56, 0x7F7F7F7F7F7F7F7FULL));
-        std::memcpy(dst, &out_val, 8);
+        Encode7to8_BMI2_FromVal(in_val, dst);
     }
 }
+#endif
 
 static void EncodeLoop_SWAR(const uint8_t* src, uint8_t* dst, size_t full_chunks) {
     size_t c = 0;
@@ -315,25 +358,7 @@ static void EncodeLoop_SWAR(const uint8_t* src, uint8_t* dst, size_t full_chunks
     }
 }
 
-static Napi::Value Encode(const Napi::CallbackInfo& info) {
-    Napi::Env env = info.Env();
-    if (info.Length() < 1 || !IsUint8Array(info[0])) {
-        Napi::TypeError::New(env, "encode: input must be a Uint8Array or Uint8ClampedArray").ThrowAsJavaScriptException();
-        return env.Null();
-    }
-    void* in_ptr = nullptr;
-    size_t il = 0;
-    napi_status status = napi_get_typedarray_info(env, info[0], nullptr, &il, &in_ptr, nullptr, nullptr);
-    NAPI_THROW_IF_FAILED(env, status, env.Null());
-    const uint8_t* in = static_cast<const uint8_t*>(in_ptr);
-
-    size_t full_chunks = il / 7;
-    size_t rem = il - (full_chunks * 7);
-    size_t out_len = il + full_chunks + (rem != 0);
-
-    Napi::ArrayBuffer ab = Napi::ArrayBuffer::New(env, out_len);
-    if (env.IsExceptionPending()) return env.Null();
-    uint8_t* out = reinterpret_cast<uint8_t*>(ab.Data());
+static inline void EncodeRawBytes(const uint8_t* in, uint8_t* out, size_t full_chunks, size_t rem) {
 #if defined(__x86_64__) || defined(_M_X64)
     if (CpuHasFastBMI2()) {
         EncodeLoop_BMI2(in, out, full_chunks);
@@ -353,11 +378,194 @@ static Napi::Value Encode(const Napi::CallbackInfo& info) {
         Encode7to8_SWAR(b, tmp, false);
         std::memcpy(out, tmp, rem + 1);
     }
+}
 
-    Napi::Uint8Array out_ta = Napi::Uint8Array::New(env, out_len, ab, 0);
+static inline uint64_t PackAsciiChar16ToUint64(const char16_t* src, bool can_read_8) {
+#if defined(__x86_64__) || defined(_M_X64)
+    if (can_read_8) {
+        __m128i v = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src));
+        __m128i p = _mm_packus_epi16(v, v);
+#if defined(_MSC_VER) && !defined(__clang__)
+        return static_cast<uint64_t>(p.m128i_u64[0]);
+#else
+        return static_cast<uint64_t>(_mm_cvtsi128_si64(p));
+#endif
+    }
+#elif defined(__aarch64__) || defined(_M_ARM64)
+    if (can_read_8) {
+        uint16x8_t v = vld1q_u16(reinterpret_cast<const uint16_t*>(src));
+        uint8x8_t p = vmovn_u16(v);
+        return vget_lane_u64(vreinterpret_u64_u8(p), 0);
+    }
+#endif
+    uint64_t val = 0;
+    val |= static_cast<uint64_t>(static_cast<uint8_t>(src[0]));
+    val |= static_cast<uint64_t>(static_cast<uint8_t>(src[1])) << 8;
+    val |= static_cast<uint64_t>(static_cast<uint8_t>(src[2])) << 16;
+    val |= static_cast<uint64_t>(static_cast<uint8_t>(src[3])) << 24;
+    val |= static_cast<uint64_t>(static_cast<uint8_t>(src[4])) << 32;
+    val |= static_cast<uint64_t>(static_cast<uint8_t>(src[5])) << 40;
+    val |= static_cast<uint64_t>(static_cast<uint8_t>(src[6])) << 48;
+    return val;
+}
+
+#if defined(__x86_64__) || defined(_M_X64)
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((target("bmi2")))
+#endif
+static inline void EncodeLoop_BMI2_AsciiChar16(const char16_t* src, uint8_t* dst, size_t full_chunks) {
+    size_t c = 0;
+    for (; c + 1 < full_chunks; c++, src += 7, dst += 8) {
+        uint64_t in_val = PackAsciiChar16ToUint64(src, true);
+        Encode7to8_BMI2_FromVal(in_val, dst);
+    }
+    if (c < full_chunks) {
+        uint64_t in_val = PackAsciiChar16ToUint64(src, false);
+        Encode7to8_BMI2_FromVal(in_val, dst);
+    }
+}
+#endif
+
+static inline void EncodeLoop_SWAR_AsciiChar16(const char16_t* src, uint8_t* dst, size_t full_chunks) {
+    size_t c = 0;
+    for (; c + 1 < full_chunks; c++, src += 7, dst += 8) {
+        uint64_t in_val = PackAsciiChar16ToUint64(src, true);
+        Encode7to8_SWAR_FromVal(in_val, dst);
+    }
+    if (c < full_chunks) {
+        uint64_t in_val = PackAsciiChar16ToUint64(src, false);
+        Encode7to8_SWAR_FromVal(in_val, dst);
+    }
+}
+
+static inline void EncodeRawAsciiChar16(const char16_t* in, uint8_t* out, size_t full_chunks, size_t rem) {
+#if defined(__x86_64__) || defined(_M_X64)
+    if (CpuHasFastBMI2()) {
+        EncodeLoop_BMI2_AsciiChar16(in, out, full_chunks);
+    } else
+#endif
+    {
+        EncodeLoop_SWAR_AsciiChar16(in, out, full_chunks);
+    }
+
+    in += full_chunks * 7;
+    out += full_chunks * 8;
+
+    if (rem) {
+        char16_t b[7] = {0};
+        std::memcpy(b, in, rem * sizeof(char16_t));
+        uint64_t in_val = PackAsciiChar16ToUint64(b, false);
+        uint8_t tmp[8];
+        Encode7to8_SWAR_FromVal(in_val, tmp);
+        std::memcpy(out, tmp, rem + 1);
+    }
+}
+
+static inline Napi::Value MakeEncodeResult(Napi::Env env, Napi::Uint8Array out_u8a) {
     if (env.IsExceptionPending()) return env.Null();
     AddonData* addonData = env.GetInstanceData<AddonData>();
-    return addonData->encodeResultConstructor.New({ out_ta });
+    return addonData->encodeResultConstructor.New({ out_u8a });
+}
+
+static inline Napi::Value MakeEncodeResult(Napi::Env env, Napi::ArrayBuffer ab, size_t out_len) {
+    Napi::Uint8Array out_u8a = Napi::Uint8Array::New(env, out_len, ab, 0);
+    return MakeEncodeResult(env, out_u8a);
+}
+
+static inline Napi::Value MakeEncodeResult(Napi::Env env) {
+    return MakeEncodeResult(env, Napi::Uint8Array::New(env, 0));
+}
+
+static Napi::Value EncodeBytes(Napi::Env env, const uint8_t* in, size_t il) {
+    if (il == 0) return MakeEncodeResult(env);
+
+    size_t full_chunks = il / 7;
+    size_t rem = il - (full_chunks * 7);
+    size_t out_len = il + full_chunks + (rem != 0);
+
+    Napi::ArrayBuffer ab = Napi::ArrayBuffer::New(env, out_len);
+    if (env.IsExceptionPending()) return env.Null();
+    uint8_t* out = reinterpret_cast<uint8_t*>(ab.Data());
+
+    EncodeRawBytes(in, out, full_chunks, rem);
+
+    return MakeEncodeResult(env, ab, out_len);
+}
+
+static Napi::Value Encode(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+    if (info.Length() < 1) {
+        Napi::TypeError::New(env, "encode: input must be a string, Uint8Array or Uint8ClampedArray").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+    if (IsUint8Array(info[0])) {
+        void* in_ptr = nullptr;
+        size_t il = 0;
+        napi_status status = napi_get_typedarray_info(env, info[0], nullptr, &il, &in_ptr, nullptr, nullptr);
+        NAPI_THROW_IF_FAILED(env, status, env.Null());
+        if (il == 0) return MakeEncodeResult(env);
+        return EncodeBytes(env, static_cast<const uint8_t*>(in_ptr), il);
+    }
+    if (info[0].IsString()) {
+        napi_value str_val = info[0];
+        size_t utf16_len = 0;
+        napi_status status = napi_get_value_string_utf16(env, str_val, nullptr, 0, &utf16_len);
+        NAPI_THROW_IF_FAILED(env, status, env.Null());
+
+        if (utf16_len == 0) return MakeEncodeResult(env);
+
+        size_t utf8_len = 0;
+        status = napi_get_value_string_utf8(env, str_val, nullptr, 0, &utf8_len);
+        NAPI_THROW_IF_FAILED(env, status, env.Null());
+
+#ifdef USE_V8_ACCELERATION
+        if (utf8_len == utf16_len) {
+            v8::Isolate* isolate = v8::Isolate::GetCurrent();
+            if (isolate) {
+                v8::Local<v8::Value> v8_val = *reinterpret_cast<v8::Local<v8::Value>*>(&str_val);
+                if (v8_val->IsString()) {
+                    v8::Local<v8::String> v8_str = v8_val.As<v8::String>();
+                    size_t full_chunks = utf8_len / 7;
+                    size_t rem = utf8_len - (full_chunks * 7);
+                    size_t out_len = utf8_len + full_chunks + (rem != 0);
+
+                    Napi::ArrayBuffer ab = Napi::ArrayBuffer::New(env, out_len);
+                    if (env.IsExceptionPending()) return env.Null();
+                    uint8_t* out = reinterpret_cast<uint8_t*>(ab.Data());
+
+                    {
+                        v8::String::ValueView view(isolate, v8_str);
+                        if (view.is_one_byte()) {
+                            EncodeRawBytes(reinterpret_cast<const uint8_t*>(view.data8()), out, full_chunks, rem);
+                        } else {
+                            EncodeRawAsciiChar16(reinterpret_cast<const char16_t*>(view.data16()), out, full_chunks, rem);
+                        }
+                    }
+
+                    return MakeEncodeResult(env, ab, out_len);
+                }
+            }
+        }
+#endif
+
+        constexpr size_t kStackCap = 1024;
+        char stack_buf[kStackCap];
+        char* buf = stack_buf;
+        std::string heap_buf;
+        if (utf8_len + 1 > kStackCap) {
+            heap_buf.resize(utf8_len + 1);
+            buf = heap_buf.data();
+        }
+        if (utf8_len == utf16_len) {
+            status = napi_get_value_string_latin1(env, str_val, buf, utf8_len + 1, nullptr);
+        } else {
+            status = napi_get_value_string_utf8(env, str_val, buf, utf8_len + 1, nullptr);
+        }
+        NAPI_THROW_IF_FAILED(env, status, env.Null());
+        return EncodeBytes(env, reinterpret_cast<const uint8_t*>(buf), utf8_len);
+    }
+    Napi::TypeError::New(env, "encode: input must be a string, Uint8Array or Uint8ClampedArray").ThrowAsJavaScriptException();
+    return env.Null();
 }
 
 // ============================================================================
@@ -618,8 +826,7 @@ static Napi::Value Decode(const Napi::CallbackInfo& info) {
         heap_buf.resize(input_len + 1);
         buf = heap_buf.data();
     }
-    size_t copied = 0;
-    status = napi_get_value_string_latin1(env, str_val, buf, input_len + 1, &copied);
+    status = napi_get_value_string_latin1(env, str_val, buf, input_len + 1, nullptr);
     NAPI_THROW_IF_FAILED(env, status, env.Null());
     bool success = DecodeImpl(reinterpret_cast<const uint8_t*>(buf), full_chunks, rem, out);
     if (!success) return ThrowSyntaxError();
@@ -1273,8 +1480,7 @@ static Napi::Value EncodeResult_ToJSTemplateLiterals(const Napi::CallbackInfo& i
                 heap_buf.resize(utf16_len + 1);
                 buf = heap_buf.data();
             }
-            size_t copied = 0;
-            status = napi_get_value_string_latin1(env, str_handle, buf, utf16_len + 1, &copied);
+            status = napi_get_value_string_latin1(env, str_handle, buf, utf16_len + 1, nullptr);
             NAPI_THROW_IF_FAILED(env, status, env.Null());
             EscapeToTemplateLiterals(reinterpret_cast<const uint8_t*>(buf), utf16_len, res);
         } else {
@@ -1286,8 +1492,7 @@ static Napi::Value EncodeResult_ToJSTemplateLiterals(const Napi::CallbackInfo& i
                 heap_buf16.resize(utf16_len + 1);
                 buf16 = heap_buf16.data();
             }
-            size_t copied = 0;
-            status = napi_get_value_string_utf16(env, str_handle, buf16, utf16_len + 1, &copied);
+            status = napi_get_value_string_utf16(env, str_handle, buf16, utf16_len + 1, nullptr);
             NAPI_THROW_IF_FAILED(env, status, env.Null());
             EscapeToTemplateLiterals(reinterpret_cast<const char16_t*>(buf16), utf16_len, res);
         }
@@ -2008,43 +2213,6 @@ static inline size_t GetTrailingWhitespaceLengthUtf8(const uint8_t* input, size_
     return 0;
 }
 
-static inline bool HasNonAscii(const uint8_t* src, size_t len) {
-    size_t i = 0;
-#if defined(__x86_64__) || defined(_M_X64)
-    while (i + 16 <= len) {
-        __m128i v = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src + i));
-        if (_mm_movemask_epi8(v)) return true;
-        i += 16;
-    }
-#elif defined(__aarch64__) || defined(_M_ARM64)
-    const uint8x16_t v_mask = vdupq_n_u8(0x80);
-    while (i + 16 <= len) {
-        uint8x16_t v = vld1q_u8(src + i);
-        if (vmaxvq_u8(vandq_u8(v, v_mask))) return true;
-        i += 16;
-    }
-#elif (defined(__PPC64__) || defined(__ppc64__) || defined(_ARCH_PPC64)) && defined(__ALTIVEC__)
-    const __vector unsigned char v_mask = vec_splats(static_cast<unsigned char>(0x80));
-    const __vector unsigned char v_zero = vec_splats(static_cast<unsigned char>(0));
-    while (i + 16 <= len) {
-        __vector unsigned char v = vec_xl(0, reinterpret_cast<const unsigned char*>(src + i));
-        if (vec_any_ne(vec_and(v, v_mask), v_zero)) return true;
-        i += 16;
-    }
-#endif
-    while (i + 8 <= len) {
-        uint64_t v;
-        std::memcpy(&v, src + i, 8);
-        if (v & 0x8080808080808080ULL) return true;
-        i += 8;
-    }
-    while (i < len) {
-        if (src[i] >= 128) return true;
-        i++;
-    }
-    return false;
-}
-
 static void ParseJSTemplateLiteralsUtf8(const uint8_t* input, size_t len, ParsedStringResult& res) {
     res.error = true;
     res.oom = false;
@@ -2634,8 +2802,7 @@ static Napi::Value ParseJSTemplateLiterals(const Napi::CallbackInfo& info) {
                     heap_buf.resize(utf16_len + 1);
                     buf = heap_buf.data();
                 }
-                size_t copied = 0;
-                status = napi_get_value_string_latin1(env, str_val, buf, utf16_len + 1, &copied);
+                status = napi_get_value_string_latin1(env, str_val, buf, utf16_len + 1, nullptr);
                 NAPI_THROW_IF_FAILED(env, status, env.Null());
                 ParseJSTemplateLiteralsImpl(reinterpret_cast<const uint8_t*>(buf), utf16_len, res);
             } else {
@@ -2647,8 +2814,7 @@ static Napi::Value ParseJSTemplateLiterals(const Napi::CallbackInfo& info) {
                     heap_buf16.resize(utf16_len + 1);
                     buf16 = heap_buf16.data();
                 }
-                size_t copied = 0;
-                status = napi_get_value_string_utf16(env, str_val, buf16, utf16_len + 1, &copied);
+                status = napi_get_value_string_utf16(env, str_val, buf16, utf16_len + 1, nullptr);
                 NAPI_THROW_IF_FAILED(env, status, env.Null());
                 ParseJSTemplateLiteralsImpl(reinterpret_cast<const char16_t*>(buf16), utf16_len, res);
             }

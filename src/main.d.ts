@@ -22,7 +22,7 @@ export declare var EncodeResult: {
     prototype: EncodeResultPrototype;
 };
 
-export declare function encode(input: Uint8Array | Uint8ClampedArray): EncodeResult;
+export declare function encode(input: string | Uint8Array | Uint8ClampedArray): EncodeResult;
 
 export declare function decode(input: string | Uint8Array | Uint8ClampedArray): Uint8Array<ArrayBuffer>;
 
