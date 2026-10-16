@@ -22,7 +22,7 @@
         "GCC_SYMBOLS_PRIVATE_EXTERN": "YES",
         "LLVM_LTO": "YES"
       },
-      "sources": [ "src-napi/addon.cpp" ],
+      "sources": [ "src/napi.cpp" ],
       "include_dirs": [
         "<!@(node -p \"require('node-addon-api').include\")"
       ],
@@ -68,7 +68,7 @@
         "GCC_SYMBOLS_PRIVATE_EXTERN": "YES",
         "LLVM_LTO": "YES"
       },
-      "sources": [ "src-napi/addon.cpp" ],
+      "sources": [ "src/napi.cpp" ],
       "include_dirs": [
         "<!@(node -p \"require('node-addon-api').include\")"
       ],

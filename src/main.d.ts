@@ -84,9 +84,10 @@ export declare function parseJSTemplateLiterals(input: string | Uint8Array | Uin
  * The underlying active implementation in the current runtime:
  * - `'v8'`: High-performance native addon for Node.js using V8 C++ internal APIs and SIMD/BMI2 acceleration.
  * - `'napi'`: Node-API native addon providing ABI stability in non-V8 runtimes such as Bun or Deno.
+ * - `'wasm'`: WebAssembly (WASM) SWAR-accelerated implementation for browsers and modern JS runtimes.
  * - `'js'`: Pure JavaScript portable fallback that runs in all web browsers and JS environments.
  */
-export declare const _impl: 'v8' | 'napi' | 'js';
+export declare const _impl: 'v8' | 'napi' | 'wasm' | 'js';
 
 export declare namespace Base128 {
     export { _impl, EncodeResult, encode, decode, parseJSTemplateLiterals };

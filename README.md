@@ -8,7 +8,8 @@ Preview: https://bddjr.github.io/base128/
 
 - **Smaller than Base64**: ~12.5% smaller payload size than Base64.
 - **ASCII Safe**: Encodes binary data into safe ASCII characters and JavaScript template literals.
-- **High Performance**: Native C++ (Node-API) implementation for Node.js / Bun / Deno with prebuilt binaries across platforms (Linux, Windows, macOS).
+- **High Performance**: Native C++ (Node-API / V8) implementation for Node.js / Bun / Deno with prebuilt binaries across platforms (Linux, Windows, macOS).
+- **WebAssembly (SIMD)**: High-speed WebAssembly implementation (`base128-ascii/wasm`) accelerated with WASM SIMD128 and 64-bit SWAR, ideal for browsers, Edge runtimes, or environments without native C++ addon support.
 - **Universal**: Pure JavaScript fallback (`src/browser.mjs`) that runs seamlessly in all web browsers and runtimes.
 
 ## Setup
@@ -16,6 +17,10 @@ Preview: https://bddjr.github.io/base128/
 ```sh
 npm i base128-ascii@latest
 ```
+
+### Usage
+
+#### Native C++ (Default for Node.js / Bun / Deno)
 
 ```js
 import Base128 from "base128-ascii"
@@ -31,6 +36,24 @@ const jstlToStr = Base128.parseJSTemplateLiterals(encodedTemplate)
 
 // decode to bytes
 const decodedBytes = Base128.decode(jstlToStr)
+```
+
+#### WebAssembly (WASM SIMD)
+
+Accelerated with WebAssembly SIMD128 and 64-bit SWAR, ideal for web browsers, Edge runtimes (Cloudflare Workers, Deno, Bun) or server environments without native C++ compilation:
+
+```js
+import Base128 from "base128-ascii/wasm"
+
+const encodedTemplate = Base128.encode(input).toJSTemplateLiterals()
+const jstlToStr = Base128.parseJSTemplateLiterals(encodedTemplate)
+const decodedBytes = Base128.decode(jstlToStr)
+```
+
+#### Pure JavaScript (Browser Fallback)
+
+```js
+import Base128 from "base128-ascii/browser"
 ```
 
 ## Effect
@@ -73,6 +96,23 @@ equal: true
 
 base64:
 encoded length: 66666668
+```
+
+WebAssembly (`base128-ascii/wasm`) performance on `50MB` file:
+
+```
+[base128-ascii/wasm] 50MB
+file length: 50000000
+
+base128-ascii/wasm:
+time encode: 66.194ms
+time toJSTemplateLiterals: 130.611ms
+time toString: 18.662ms
+time string toJSTemplateLiterals: 103.098ms
+toJSTemplateLiterals length: 59001920
+time parseJSTemplateLiterals: 104.580ms
+time decode: 56.212ms
+equal: true
 ```
 
 ## Mini Decoder

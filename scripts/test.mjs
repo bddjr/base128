@@ -2,6 +2,21 @@
 
 import Base128 from "base128-ascii";
 import browserBase128 from "../src/browser.mjs";
+// Enable fetch to support file:// URLs in Node.js test environment
+if (typeof process !== "undefined" && process.versions && process.versions.node) {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async (url, ...args) => {
+        const u = new URL(url);
+        if (u.protocol === "file:") {
+            const fsPromises = await import("node:fs/promises");
+            const data = await fsPromises.readFile(u);
+            return new Response(data, { headers: { "Content-Type": "application/wasm" } });
+        }
+        return originalFetch(url, ...args);
+    };
+}
+
+const wasmBase128 = (await import("base128-ascii/wasm")).default;
 import { decode as miniDecode } from "../src/mini-decode.mjs";
 import fs from "node:fs";
 import path from "node:path";
@@ -153,6 +168,10 @@ if (extraBase128) {
     test(extraBase128, "napi.node");
 }
 
+// test WASM (base128-ascii/wasm)
+console.log('################## base128-ascii/wasm (WebAssembly) ##################');
+test(wasmBase128, 'base128-ascii/wasm');
+
 // test pure JS (browser.mjs)
 console.log('################## browser.mjs (pure JS) ##################');
 test(browserBase128, 'browser.mjs');
@@ -181,32 +200,38 @@ console.log('################## mini-decode.mjs ##################');
     }
 }
 
-// cross-compatibility / parity check between native, browser.mjs, extra binding, and mini-decode.mjs
+// cross-compatibility / parity check between native, wasm, browser.mjs, extra binding, and mini-decode.mjs
 console.log('------------------');
 console.log('Parity / Cross-compatibility Check:');
 for (const { name } of fs.readdirSync(inputDir).map(name => ({ name }))) {
     const file = fs.readFileSync(inputDir + '/' + name);
     const nativeRes = Base128.encode(file);
+    const wasmRes = wasmBase128.encode(file);
     const browserRes = browserBase128.encode(file);
 
-    const bytesMatch = Buffer.from(nativeRes.bytes).equals(Buffer.from(browserRes.bytes));
+    const bytesMatch = Buffer.from(nativeRes.bytes).equals(Buffer.from(browserRes.bytes)) &&
+                       Buffer.from(nativeRes.bytes).equals(Buffer.from(wasmRes.bytes));
     allSuccess &&= bytesMatch;
 
-    const strMatch = nativeRes.toString() === browserRes.toString();
+    const strMatch = nativeRes.toString() === browserRes.toString() &&
+                     nativeRes.toString() === wasmRes.toString();
     allSuccess &&= strMatch;
 
-    const jstlMatch = nativeRes.toJSTemplateLiterals() === browserRes.toJSTemplateLiterals();
+    const jstlMatch = nativeRes.toJSTemplateLiterals() === browserRes.toJSTemplateLiterals() &&
+                      nativeRes.toJSTemplateLiterals() === wasmRes.toJSTemplateLiterals();
     allSuccess &&= jstlMatch;
 
     const cross1 = file.equals(Base128.decode(browserRes.toString()));
     const cross2 = file.equals(browserBase128.decode(nativeRes.toString()));
     const cross3 = file.equals(miniDecode(nativeRes.toString()));
-    allSuccess &&= cross1 && cross2 && cross3;
+    const cross4 = file.equals(wasmBase128.decode(nativeRes.toString()));
+    const cross5 = file.equals(Base128.decode(wasmRes.toString()));
+    allSuccess &&= cross1 && cross2 && cross3 && cross4 && cross5;
 
-    if (!bytesMatch || !strMatch || !jstlMatch || !cross1 || !cross2 || !cross3) {
-        console.error(`Mismatch between native, browser, or miniDecode on file: ${name}`);
+    if (!bytesMatch || !strMatch || !jstlMatch || !cross1 || !cross2 || !cross3 || !cross4 || !cross5) {
+        console.error(`Mismatch between native, wasm, browser, or miniDecode on file: ${name}`);
         allSuccess = false;
-        throw new Error(`Mismatch between native, browser, or miniDecode on file: ${name}`);
+        throw new Error(`Mismatch between native, wasm, browser, or miniDecode on file: ${name}`);
     }
 
     if (extraBase128) {
@@ -235,7 +260,7 @@ console.log('Cross-compatibility passed:', allSuccess)
 console.log('------------------')
 
 // Verify parseJSTemplateLiterals spec compliance (newline normalization, leading zeros in \u{...}, line continuations)
-for (const impl of [Base128, browserBase128, extraBase128].filter(Boolean)) {
+for (const impl of [Base128, wasmBase128, browserBase128, extraBase128].filter(Boolean)) {
     const specTests = [
         ['`hello\\r\\nworld`', 'hello\r\nworld'],
         ['`hello\r\nworld`', 'hello\nworld'],

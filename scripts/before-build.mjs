@@ -13,3 +13,22 @@ try {
 } catch {
     fs.symlinkSync(".binding.gyp", linkPath, "file");
 }
+
+const websiteDir = path.join(rootDir, "website");
+const websiteLinks = [
+    { link: path.join(websiteDir, "wasm.mjs"), target: "../wasm/wasm.mjs" },
+    { link: path.join(websiteDir, "base128.wasm"), target: "../wasm/base128.wasm" }
+];
+
+for (const { link, target } of websiteLinks) {
+    try {
+        const stat = fs.lstatSync(link);
+        if (!stat.isSymbolicLink() || fs.readlinkSync(link) !== target) {
+            fs.unlinkSync(link);
+            fs.symlinkSync(target, link, "file");
+        }
+    } catch {
+        fs.symlinkSync(target, link, "file");
+    }
+}
+

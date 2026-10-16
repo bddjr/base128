@@ -1,5 +1,18 @@
 // base128-ascii (The Unlicense)
 
+/**
+ * @param {any} input
+ */
+function isUint8Array(input) {
+    // Use Symbol.toStringTag to support recognizing objects from iframes
+    if (input) switch (input[Symbol.toStringTag]) {
+        case "Uint8Array":
+        case "Uint8ClampedArray":
+            return true
+    }
+    return false
+}
+
 export class EncodeResult {
     /**
      * @param {Uint8Array<ArrayBuffer>} bytes
@@ -42,15 +55,9 @@ export class EncodeResult {
  * @param {string | Uint8Array | Uint8ClampedArray} input
  */
 export function encode(input) {
-    a: if (typeof input == 'string') {
+    if (typeof input == 'string') {
         input = new TextEncoder().encode(input)
-    } else {
-        // Use Symbol.toStringTag to support recognizing objects from iframes
-        if (input) switch (input[Symbol.toStringTag]) {
-            case "Uint8Array":
-            case "Uint8ClampedArray":
-                break a
-        }
+    } else if (!isUint8Array(input)) {
         throw TypeError("encode: input must be a string, Uint8Array or Uint8ClampedArray")
     }
     const il = input.length
@@ -102,15 +109,8 @@ export function decode(input) {
     // in  _0000000 _1111111 _2222222 _3333333 _4444444 _5555555 _6666666 _7777777
     // out 00000001 11111122 22222333 33334444 44455555 55666666 67777777
     const isStr = typeof input == 'string'
-    a: if (!isStr) {
-        // Use Symbol.toStringTag to support recognizing objects from iframes
-        if (input) switch (input[Symbol.toStringTag]) {
-            case "Uint8Array":
-            case "Uint8ClampedArray":
-                break a
-        }
+    if (!isStr && !isUint8Array(input))
         throw TypeError("decode: input must be a string, Uint8Array or Uint8ClampedArray");
-    }
 
     const errInvalidInput = `decode: invalid input`
         , il = input.length
@@ -224,15 +224,10 @@ function isTemplateLiteralWhitespace(c) {
  * @param {string | Uint8Array | Uint8ClampedArray} input
  */
 export function parseJSTemplateLiterals(input) {
-    a: if (typeof input != 'string') {
-        // Use Symbol.toStringTag to support recognizing objects from iframes
-        if (input) switch (input[Symbol.toStringTag]) {
-            case "Uint8Array":
-            case "Uint8ClampedArray":
-                input = new TextDecoder().decode(input)
-                break a
-        }
-        throw TypeError("parseJSTemplateLiterals: input must be a string, Uint8Array or Uint8ClampedArray");
+    if (typeof input != 'string') {
+        if (!isUint8Array(input))
+            throw TypeError("parseJSTemplateLiterals: input must be a string, Uint8Array or Uint8ClampedArray");
+        input = new TextDecoder().decode(input)
     }
 
     const err = "parseJSTemplateLiterals: invalid input"
@@ -400,12 +395,10 @@ export function parseJSTemplateLiterals(input) {
 
 export const _impl = 'js'
 
-export const Base128 = {
+export default {
     _impl,
     EncodeResult,
     encode,
     decode,
     parseJSTemplateLiterals
 }
-
-export default Base128

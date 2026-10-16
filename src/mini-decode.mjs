@@ -1,6 +1,7 @@
 /**
  * Decode base128 using a minimal implementation, without validating whether the input is valid.
  * @param {string} input
+ * @returns {Uint8Array<ArrayBuffer>}
  */
 export var decode = input => {
     //     0        1        2        3        4        5        6        7
