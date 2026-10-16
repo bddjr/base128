@@ -105,13 +105,13 @@ WebAssembly (`base128-ascii/wasm`) performance on `50MB` file:
 file length: 50000000
 
 base128-ascii/wasm:
-time encode: 66.194ms
-time toJSTemplateLiterals: 130.611ms
-time toString: 18.662ms
-time string toJSTemplateLiterals: 103.098ms
+time encode: 54.910ms
+time toJSTemplateLiterals: 108.034ms
+time toString: 19.117ms
+time string toJSTemplateLiterals: 112.621ms
 toJSTemplateLiterals length: 59001920
-time parseJSTemplateLiterals: 104.580ms
-time decode: 56.212ms
+time parseJSTemplateLiterals: 106.153ms
+time decode: 56.998ms
 equal: true
 ```
 
