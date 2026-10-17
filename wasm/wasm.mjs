@@ -1,7 +1,6 @@
 // base128-ascii (The Unlicense)
 
 const memory = new WebAssembly.Memory({ initial: 2 })
-const response = fetch(new URL('./base128.wasm', import.meta.url))
 
 /**
  * @type {{
@@ -18,7 +17,12 @@ const {
     base128wasm_to_js_template_literals,
     base128wasm_parse_js_template_literals,
     __heap_base
-} = /** @type {*} */ ((await WebAssembly.instantiateStreaming(response, { env: { memory } })).instance.exports)
+} = /** @type {*} */ ((
+    await WebAssembly.instantiateStreaming(
+        fetch(new URL('./base128.wasm', import.meta.url)),
+        { env: { memory } }
+    )
+).instance.exports)
 
 const heapBase = __heap_base ? __heap_base.value : 65536
 const textEncoder = new TextEncoder()
