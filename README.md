@@ -38,15 +38,19 @@ const jstlToStr = Base128.parseJSTemplateLiterals(encodedTemplate)
 const decodedBytes = Base128.decode(jstlToStr)
 ```
 
-#### WebAssembly (WASM SIMD)
+If attempting to import the native implementation fails, it will automatically fall back to `base128-ascii/browser`.
 
-The runtime environment needs to support top-level await.
+#### WebAssembly (WASM SIMD)
 
 Accelerated with WebAssembly SIMD128 and 64-bit SWAR, ideal for web browsers, Edge runtimes (Cloudflare Workers, Deno, Bun) or server environments without native C++ compilation:
 
 ```js
 import Base128 from "base128-ascii/wasm"
 ```
+
+The runtime environment needs to support top-level await.
+
+If attempting to import the WebAssembly implementation fails, it will throw an error.
 
 #### Pure JavaScript (Browser Fallback)
 
