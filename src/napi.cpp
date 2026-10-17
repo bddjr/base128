@@ -2903,8 +2903,6 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
     addonData->encodeResultConstructor = Napi::Persistent(ctor);
     env.SetInstanceData<AddonData, CleanupAddonData>(addonData);
 
-    Napi::Object defaultObj = Napi::Object::New(env);
-
     exports.Set("EncodeResult", ctor);
     exports.Set("encode", Napi::Function::New(env, Encode, "encode"));
     exports.Set("decode", Napi::Function::New(env, Decode, "decode"));
