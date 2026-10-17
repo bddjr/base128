@@ -19,7 +19,7 @@ loadBinding: {
             } catch (e) { }
         }
         try {
-            const ldd = require("fs").readFileSync("/usr/bin/ldd", "utf8");
+            const ldd = require("node:fs").readFileSync("/usr/bin/ldd", "utf8");
             if (ldd.indexOf("musl") !== -1) {
                 return true;
             }
@@ -62,30 +62,26 @@ loadBinding: {
 
     if (bindingPkg) {
         try {
-            const mod = require(`@base128-ascii/binding-${bindingPkg}/v8.node`);
-            if (mod && mod._impl === "v8") {
-                module.exports = mod;
-                break loadBinding;
-            }
-        } catch (e) { }
-        try {
-            module.exports = require(`@base128-ascii/binding-${bindingPkg}/napi.node`);
+            module.exports = require(`@base128-ascii/binding-${bindingPkg}/v8.node`);
             break loadBinding;
-        } catch (e) { }
+        } catch (e) {
+            if (e && e.code !== 'MODULE_NOT_FOUND') try {
+                module.exports = require(`@base128-ascii/binding-${bindingPkg}/napi.node`);
+                break loadBinding;
+            } catch (e) { }
+        }
     }
 
     // 2. Local development / CI test: load local build if subpackage not loaded
     try {
-        const mod = require("../build/Release/v8.node");
-        if (mod && mod._impl === "v8") {
-            module.exports = mod;
-            break loadBinding;
-        }
-    } catch (e) { }
-    try {
-        module.exports = require("../build/Release/napi.node");
+        module.exports = require("../build/Release/v8.node");
         break loadBinding;
-    } catch (e) { }
+    } catch (e) {
+        if (e && e.code !== 'MODULE_NOT_FOUND') try {
+            module.exports = require("../build/Release/napi.node");
+            break loadBinding;
+        } catch (e) { }
+    }
 
     // 3. Fallback: pure JS implementation
     module.exports = require("./browser.mjs");
