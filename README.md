@@ -20,7 +20,7 @@ npm i base128-ascii@latest
 
 ### Usage
 
-#### Native C++ (Default for Node.js / Bun / Deno)
+#### Node-API
 
 ```js
 import Base128 from "base128-ascii"
@@ -38,15 +38,19 @@ const jstlToStr = Base128.parseJSTemplateLiterals(encodedTemplate)
 const decodedBytes = Base128.decode(jstlToStr)
 ```
 
+Primarily designed for Node.js.
+
+It can also be used in Bun or Deno, but cannot achieve maximum performance because zero-copy string reading is not supported.
+
 If attempting to import the native implementation fails, it will automatically fall back to `base128-ascii/browser`.
 
-#### WebAssembly (WASM SIMD)
+#### WebAssembly
 
 ```js
 import Base128 from "base128-ascii/wasm"
 ```
 
-Suitable for environments that do not support Node-API, but support WebAssembly SIMD128 and top-level await (e.g. web browsers).
+For environments without Node-API support but with WebAssembly SIMD128 and top-level await support (e.g., web browsers).
 
 If attempting to import the WebAssembly implementation fails, it will throw an error.
 
