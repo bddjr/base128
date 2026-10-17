@@ -895,17 +895,22 @@ static inline char* EscapeBytesToTemplateLiterals(const char* src, size_t len, s
     size_t start = 0;
     size_t i = 0;
 
+    auto ensureCap = [&](size_t needed) -> bool {
+        if (static_cast<size_t>(dst - out_buf) + needed > cap) {
+            size_t off = dst - out_buf;
+            cap = cap * 2 + needed + 128;
+            char* nb = static_cast<char*>(std::realloc(out_buf, cap));
+            if (!nb) { std::free(out_buf); return false; }
+            out_buf = nb;
+            dst = out_buf + off;
+        }
+        return true;
+    };
+
     auto emit_plain = [&](size_t pos) -> bool {
         size_t plain = pos - start;
         if (plain > 0) {
-            if (static_cast<size_t>(dst - out_buf) + plain + 32 > cap) {
-                size_t off = dst - out_buf;
-                cap = cap * 2 + plain + 128;
-                char* nb = static_cast<char*>(std::realloc(out_buf, cap));
-                if (!nb) { std::free(out_buf); return false; }
-                out_buf = nb;
-                dst = out_buf + off;
-            }
+            if (!ensureCap(plain + 32)) return false;
             std::memcpy(dst, src + start, plain);
             dst += plain;
         }
@@ -916,6 +921,7 @@ static inline char* EscapeBytesToTemplateLiterals(const char* src, size_t len, s
         if (c == '$') {
             if (pos + 1 < len && src[pos + 1] == '{') {
                 if (!emit_plain(pos)) return false;
+                if (!ensureCap(16)) return false;
                 std::memcpy(dst, "\\${", 3);
                 dst += 3;
                 start = pos + 2;
@@ -923,6 +929,7 @@ static inline char* EscapeBytesToTemplateLiterals(const char* src, size_t len, s
         } else if (c == '<') {
             if (IsCloseScriptTag(src, pos, len)) {
                 if (!emit_plain(pos)) return false;
+                if (!ensureCap(16)) return false;
                 std::memcpy(dst, "<\\/", 3);
                 std::memcpy(dst + 3, src + pos + 2, 6);
                 dst += 9;
@@ -930,6 +937,7 @@ static inline char* EscapeBytesToTemplateLiterals(const char* src, size_t len, s
             }
         } else {
             if (!emit_plain(pos)) return false;
+            if (!ensureCap(16)) return false;
             if (c == '\r') {
                 std::memcpy(dst, "\\r", 2);
                 dst += 2;
@@ -1113,14 +1121,7 @@ static inline char* EscapeBytesToTemplateLiterals(const char* src, size_t len, s
 
     if (!emit_plain(len)) return nullptr;
 
-    if (static_cast<size_t>(dst - out_buf) + 2 > cap) {
-        size_t offset = dst - out_buf;
-        cap += 16;
-        char* nb = static_cast<char*>(std::realloc(out_buf, cap));
-        if (!nb) { std::free(out_buf); return nullptr; }
-        out_buf = nb;
-        dst = out_buf + offset;
-    }
+    if (!ensureCap(2)) return nullptr;
     *dst++ = '`';
     *out_len = dst - out_buf;
     return out_buf;

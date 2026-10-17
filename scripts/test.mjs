@@ -513,6 +513,25 @@ for (const impl of [Base128, wasmBase128, browserBase128, extraBase128].filter(B
             throw new Error(`[${impl._impl}] Expected SyntaxError for Uint8Array with rem == 1`);
         }
     }
+
+    // Verify toJSTemplateLiterals handles large consecutive escape sequences without buffer overflow
+    {
+        for (const byteVal of [0, 13, 92, 96]) {
+            const count = 30000;
+            const u8 = new Uint8Array(count).fill(byteVal);
+            const encRes = new impl.EncodeResult(u8);
+            const jstl1 = encRes.toJSTemplateLiterals();
+            if (jstl1.length !== count * 2 + 2) {
+                allSuccess = false;
+                throw new Error(`[${impl._impl}] toJSTemplateLiterals byte ${byteVal} length mismatch: got ${jstl1.length}`);
+            }
+            const jstl2 = encRes.toJSTemplateLiterals.call(String.fromCharCode(byteVal).repeat(count));
+            if (jstl2.length !== count * 2 + 2) {
+                allSuccess = false;
+                throw new Error(`[${impl._impl}] toJSTemplateLiterals string byte ${byteVal} length mismatch: got ${jstl2.length}`);
+            }
+        }
+    }
 }
 
 
