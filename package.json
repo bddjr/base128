@@ -13,7 +13,6 @@
       "types": "./src/main.d.ts",
       "browser": "./src/pure.mjs",
       "node": "./src/main.mjs",
-      "require": "./src/main.mjs",
       "default": "./src/main.mjs"
     },
     "./wasm": {
