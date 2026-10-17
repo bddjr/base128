@@ -4,7 +4,7 @@
         "checkFeatures": true,
         "module": true,
         "files": [
-            "src/browser.mjs",
+            "src/pure.mjs",
             "src/mini-decode.mjs"
         ]
     },

@@ -1,6 +1,6 @@
 //@ts-check
 
-import browserBase128 from "../src/browser.mjs";
+import browserBase128 from "../src/pure.mjs";
 import { decode as miniDecode } from "../src/mini-decode.mjs";
 import fs from "node:fs";
 import { createRequire } from "node:module";
@@ -168,9 +168,9 @@ if (wasmBase128) {
     test(wasmBase128, 'base128-ascii/wasm');
 }
 
-// test pure JS (browser.mjs)
-console.log('################## browser.mjs (pure JS) ##################');
-test(browserBase128, 'browser.mjs');
+// test pure JS (pure.mjs)
+console.log('################## pure.mjs (pure JS) ##################');
+test(browserBase128, 'pure.mjs');
 
 // test mini-decode.mjs (pure JS decoder)
 console.log('################## mini-decode.mjs ##################');
@@ -196,7 +196,7 @@ console.log('################## mini-decode.mjs ##################');
     }
 }
 
-// cross-compatibility / parity check between native, wasm, browser.mjs, extra binding, and mini-decode.mjs
+// cross-compatibility / parity check between native, wasm, pure.mjs, extra binding, and mini-decode.mjs
 console.log('------------------');
 console.log('Parity / Cross-compatibility Check:');
 for (const { name } of fs.readdirSync(inputDir).map(name => ({ name }))) {

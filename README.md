@@ -10,7 +10,7 @@ Preview: https://bddjr.github.io/base128/
 - **ASCII Safe**: Encodes binary data into safe ASCII characters and JavaScript template literals.
 - **High Performance**: Native C++ (Node-API / V8) implementation for Node.js / Bun / Deno with prebuilt binaries across platforms (Linux, Windows, macOS).
 - **WebAssembly (SIMD)**: High-speed WebAssembly implementation (`base128-ascii/wasm`) accelerated with WASM SIMD128 and 64-bit SWAR, ideal for browsers, Edge runtimes, or environments without native C++ addon support.
-- **Universal**: Pure JavaScript fallback (`src/browser.mjs`) that runs seamlessly in all web browsers and runtimes.
+- **Universal**: Pure JavaScript fallback (`src/pure.mjs`) that runs seamlessly in all web browsers and runtimes.
 
 ## Setup
 
@@ -42,7 +42,7 @@ Primarily designed for Node.js.
 
 It can also be used in Bun or Deno, but cannot achieve maximum performance because zero-copy string reading is not supported.
 
-If attempting to import the native implementation fails, it will automatically fall back to `base128-ascii/browser`.
+If attempting to import the native implementation fails, it will automatically fall back to `base128-ascii/pure`.
 
 #### WebAssembly
 
@@ -57,7 +57,7 @@ If attempting to import the WebAssembly implementation fails, it will throw an e
 #### Pure JavaScript (Browser Fallback)
 
 ```js
-import Base128 from "base128-ascii/browser"
+import Base128 from "base128-ascii/pure"
 ```
 
 ## Effect

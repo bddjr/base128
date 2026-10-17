@@ -59,5 +59,5 @@ loadBinding: {
     }
 
     // Fallback: pure JS implementation
-    module.exports = require("./browser.mjs");
+    module.exports = require("./pure.mjs");
 }

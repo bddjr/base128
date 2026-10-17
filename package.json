@@ -7,11 +7,11 @@
   "type": "module",
   "main": "./src/main.cjs",
   "types": "./src/main.d.ts",
-  "browser": "./src/browser.mjs",
+  "browser": "./src/pure.mjs",
   "exports": {
     ".": {
       "types": "./src/main.d.ts",
-      "browser": "./src/browser.mjs",
+      "browser": "./src/pure.mjs",
       "node": "./src/main.cjs",
       "require": "./src/main.cjs",
       "default": "./src/main.cjs"
@@ -22,9 +22,9 @@
     },
     "./wasm/base128.wasm": "./wasm/base128.wasm",
     "./base128.wasm": "./wasm/base128.wasm",
-    "./browser": {
+    "./pure": {
       "types": "./src/main.d.ts",
-      "default": "./src/browser.mjs"
+      "default": "./src/pure.mjs"
     },
     "./mini-decode": {
       "default": "./src/mini-decode.mjs"
