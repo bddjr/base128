@@ -18,13 +18,7 @@ const {
     base128wasm_to_js_template_literals,
     base128wasm_parse_js_template_literals,
     __heap_base
-} = /** @type {*} */ (
-        (await (
-            WebAssembly.instantiateStreaming
-                ? WebAssembly.instantiateStreaming(response, { env: { memory } })
-                : response.then(r => r.arrayBuffer()).then(b => WebAssembly.instantiate(b, { env: { memory } }))
-        )).instance.exports
-    )
+} = /** @type {*} */ ((await WebAssembly.instantiateStreaming(response, { env: { memory } })).instance.exports)
 
 const heapBase = __heap_base ? __heap_base.value : 65536
 const textEncoder = new TextEncoder()

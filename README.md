@@ -40,6 +40,8 @@ const decodedBytes = Base128.decode(jstlToStr)
 
 #### WebAssembly (WASM SIMD)
 
+The runtime environment needs to support top-level await.
+
 Accelerated with WebAssembly SIMD128 and 64-bit SWAR, ideal for web browsers, Edge runtimes (Cloudflare Workers, Deno, Bun) or server environments without native C++ compilation:
 
 ```js
