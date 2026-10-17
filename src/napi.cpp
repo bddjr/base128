@@ -399,14 +399,18 @@ static inline uint64_t PackAsciiChar16ToUint64(const char16_t* src, bool can_rea
         return vget_lane_u64(vreinterpret_u64_u8(p), 0);
     }
 #endif
+    uint8_t tmp[8] = {
+        static_cast<uint8_t>(src[0]),
+        static_cast<uint8_t>(src[1]),
+        static_cast<uint8_t>(src[2]),
+        static_cast<uint8_t>(src[3]),
+        static_cast<uint8_t>(src[4]),
+        static_cast<uint8_t>(src[5]),
+        static_cast<uint8_t>(src[6]),
+        static_cast<uint8_t>(can_read_8 ? src[7] : 0)
+    };
     uint64_t val = 0;
-    val |= static_cast<uint64_t>(static_cast<uint8_t>(src[0]));
-    val |= static_cast<uint64_t>(static_cast<uint8_t>(src[1])) << 8;
-    val |= static_cast<uint64_t>(static_cast<uint8_t>(src[2])) << 16;
-    val |= static_cast<uint64_t>(static_cast<uint8_t>(src[3])) << 24;
-    val |= static_cast<uint64_t>(static_cast<uint8_t>(src[4])) << 32;
-    val |= static_cast<uint64_t>(static_cast<uint8_t>(src[5])) << 40;
-    val |= static_cast<uint64_t>(static_cast<uint8_t>(src[6])) << 48;
+    std::memcpy(&val, tmp, 8);
     return val;
 }
 
@@ -524,7 +528,7 @@ static Napi::Value Encode(const Napi::CallbackInfo& info) {
             v8::Isolate* isolate = v8::Isolate::GetCurrent();
             if (isolate) {
                 v8::Local<v8::Value> v8_val = *reinterpret_cast<v8::Local<v8::Value>*>(&str_val);
-                if (v8_val->IsString()) {
+                if (!v8_val.IsEmpty() && v8_val->IsString()) {
                     v8::Local<v8::String> v8_str = v8_val.As<v8::String>();
                     size_t full_chunks = utf8_len / 7;
                     size_t rem = utf8_len - (full_chunks * 7);
@@ -775,7 +779,7 @@ static Napi::Value Decode(const Napi::CallbackInfo& info) {
     v8::Isolate* isolate = v8::Isolate::GetCurrent();
     if (isolate) {
         v8::Local<v8::Value> v8_val = *reinterpret_cast<v8::Local<v8::Value>*>(&str_val);
-        if (v8_val->IsString()) {
+        if (!v8_val.IsEmpty() && v8_val->IsString()) {
             v8::Local<v8::String> v8_str = v8_val.As<v8::String>();
             input_len = v8_str->Length();
             rem = input_len & 7;
@@ -1445,7 +1449,7 @@ static Napi::Value EncodeResult_ToJSTemplateLiterals(const Napi::CallbackInfo& i
     if (isolate) {
         napi_value str_handle = strVal;
         v8::Local<v8::Value> v8_val = *reinterpret_cast<v8::Local<v8::Value>*>(&str_handle);
-        if (v8_val->IsString()) {
+        if (!v8_val.IsEmpty() && v8_val->IsString()) {
             v8::Local<v8::String> v8_str = v8_val.As<v8::String>();
             v8::String::ValueView view(isolate, v8_str);
             if (view.is_one_byte()) {
@@ -1667,17 +1671,6 @@ static void ParseJSTemplateLiteralsImpl(const CharT* input, size_t len, ParsedSt
         return true;
     };
 
-    auto pushChar = [&](char16_t ch) -> bool {
-        if (is_one_byte) {
-            if (ch <= 255) {
-                buf8[out_len++] = static_cast<char>(ch);
-                return true;
-            }
-            if (!switchToTwoByte()) return false;
-        }
-        buf16[out_len++] = ch;
-        return true;
-    };
 
 #if defined(__x86_64__) || defined(_M_X64)
     const __m128i v_slash  = _mm_set1_epi8('\\');
@@ -1888,6 +1881,7 @@ static void ParseJSTemplateLiteralsImpl(const CharT* input, size_t len, ParsedSt
             i++;
         }
 
+        // SIMD already located the escape delimiter; jump here to skip the scalar tail loop
 found_escape:
         if (i > chunkStart) {
             size_t chunkLen = i - chunkStart;
@@ -2595,6 +2589,7 @@ static void ParseJSTemplateLiteralsUtf8(const uint8_t* input, size_t len, Parsed
             i++;
         }
 
+        // SIMD already located the escape delimiter; jump here to skip the scalar tail loop
 found_escape:
         if (i > chunkStart) {
             if (!appendUtf8Slice(chunkStart, i)) return;
@@ -2768,7 +2763,7 @@ static Napi::Value ParseJSTemplateLiterals(const Napi::CallbackInfo& info) {
         v8::Isolate* isolate = v8::Isolate::GetCurrent();
         if (isolate) {
             v8::Local<v8::Value> v8_val = *reinterpret_cast<v8::Local<v8::Value>*>(&str_val);
-            if (v8_val->IsString()) {
+            if (!v8_val.IsEmpty() && v8_val->IsString()) {
                 v8::Local<v8::String> v8_str = v8_val.As<v8::String>();
                 v8::String::ValueView view(isolate, v8_str);
                 if (view.is_one_byte()) {
@@ -2851,7 +2846,7 @@ done:
 
 static bool TestV8Internal(v8::Isolate* isolate, napi_value str) {
     v8::Local<v8::Value>* v8_val = reinterpret_cast<v8::Local<v8::Value>*>(&str);
-    if (!(*v8_val)->IsString()) return false;
+    if ((*v8_val).IsEmpty() || !(*v8_val)->IsString()) return false;
 
     v8::Local<v8::String> v8_str = (*v8_val).As<v8::String>();
     v8::String::ValueView view(isolate, v8_str);
