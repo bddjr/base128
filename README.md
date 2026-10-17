@@ -46,10 +46,6 @@ Accelerated with WebAssembly SIMD128 and 64-bit SWAR, ideal for web browsers, Ed
 
 ```js
 import Base128 from "base128-ascii/wasm"
-
-const encodedTemplate = Base128.encode(input).toJSTemplateLiterals()
-const jstlToStr = Base128.parseJSTemplateLiterals(encodedTemplate)
-const decodedBytes = Base128.decode(jstlToStr)
 ```
 
 #### Pure JavaScript (Browser Fallback)
