@@ -4,25 +4,11 @@ loadBinding: {
     const isMusl = () => {
         if (process.report && typeof process.report.getReport === "function") {
             try {
-                const rep = process.report.getReport();
-                if (rep && rep.header && rep.header.glibcVersionRuntime) {
-                    return false;
-                }
-                if (rep && Array.isArray(rep.sharedObjects)) {
-                    for (var i = 0; i < rep.sharedObjects.length; i++) {
-                        const obj = rep.sharedObjects[i];
-                        if (typeof obj === "string" && (obj.indexOf("libc.musl-") !== -1 || obj.indexOf("ld-musl-") !== -1)) {
-                            return true;
-                        }
-                    }
-                }
+                return !process.report.getReport().header.glibcVersionRuntime;
             } catch (e) { }
         }
         try {
-            const ldd = require("node:fs").readFileSync("/usr/bin/ldd", "utf8");
-            if (ldd.indexOf("musl") !== -1) {
-                return true;
-            }
+            return require("node:fs").readFileSync("/usr/bin/ldd", "utf8").includes("musl");
         } catch (e) { }
         return false;
     };

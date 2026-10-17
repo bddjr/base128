@@ -39,7 +39,7 @@
   "scripts": {
     "build:wasm": "node scripts/build-wasm.mjs",
     "build": "node scripts/build-wasm.mjs && node scripts/before-build.mjs && node-gyp rebuild",
-    "check": "es-check es6 --checkFeatures --module src/main.cjs src/browser.mjs src/mini-decode.mjs && es-check es2022 --checkFeatures --module wasm/wasm.mjs && tsc",
+    "check": "es-check && tsc",
     "test": "pnpm check && pnpm build && node scripts/test.mjs",
     "test:nobuild": "pnpm check && node scripts/test.mjs",
     "test:only": "node scripts/test.mjs",

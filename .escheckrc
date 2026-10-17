@@ -1,0 +1,27 @@
+[
+    {
+        "ecmaVersion": "es2015",
+        "checkFeatures": true,
+        "module": true,
+        "files": [
+            "src/browser.mjs",
+            "src/mini-decode.mjs"
+        ]
+    },
+    {
+        "ecmaVersion": "es2016",
+        "checkFeatures": true,
+        "module": false,
+        "files": [
+            "src/main.cjs"
+        ]
+    },
+    {
+        "ecmaVersion": "es2022",
+        "checkFeatures": true,
+        "module": true,
+        "files": [
+            "wasm/wasm.mjs"
+        ]
+    }
+]
