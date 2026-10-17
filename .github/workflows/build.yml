@@ -96,13 +96,15 @@ jobs:
             image: node:lts-bookworm-slim
             platform: linux/ppc64le
             pkg_cmd: apt-get update && apt-get install -y python3 make g++
-            qemu: true
+            qemu: ppc64le
     steps:
       - uses: actions/checkout@v7
 
       - name: Set up QEMU
         if: matrix.qemu
         uses: docker/setup-qemu-action@v4
+        with:
+          platforms: ${{ matrix.qemu }}
 
       - name: Build in Docker container
         run: |
