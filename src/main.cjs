@@ -1,5 +1,5 @@
 loadBinding: {
-    // 1. Production environment: try loading platform-specific subpackage
+    // Production environment: try loading platform-specific subpackage
     const { platform, arch } = process;
     const isMusl = () => {
         if (process.report && typeof process.report.getReport === "function") {
@@ -72,17 +72,6 @@ loadBinding: {
         }
     }
 
-    // 2. Local development / CI test: load local build if subpackage not loaded
-    try {
-        module.exports = require("../build/Release/v8.node");
-        break loadBinding;
-    } catch (e) {
-        if (e && e.code !== 'MODULE_NOT_FOUND') try {
-            module.exports = require("../build/Release/napi.node");
-            break loadBinding;
-        } catch (e) { }
-    }
-
-    // 3. Fallback: pure JS implementation
+    // Fallback: pure JS implementation
     module.exports = require("./browser.mjs");
 }

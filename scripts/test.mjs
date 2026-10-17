@@ -1,7 +1,52 @@
 //@ts-check
 
-import Base128 from "base128-ascii";
 import browserBase128 from "../src/browser.mjs";
+import { decode as miniDecode } from "../src/mini-decode.mjs";
+import fs from "node:fs";
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
+
+/**
+ * @param {string} filename
+ * @returns {any}
+ */
+function loadReleaseBinding(filename) {
+    try {
+        const mod = require(`../build/Release/${filename}`);
+        if (mod && mod._impl) return mod;
+    } catch (e) {
+        return null;
+    }
+    return null;
+}
+
+const v8Base128 = loadReleaseBinding("v8.node");
+const napiBase128 = loadReleaseBinding("napi.node");
+
+const Base128 = v8Base128 || napiBase128;
+if (!Base128) {
+    throw new Error("Test failed: failed to load native binding from ../build/Release/ (neither v8.node nor napi.node could be loaded)");
+}
+
+// Verify that the loaded Base128 is indeed a native implementation
+const nativeEncodeStr = String(Base128.encode);
+if (!nativeEncodeStr.includes("[native code]")) {
+    throw new Error(`Test failed: Base128.encode is not a native implementation!\nGot: ${nativeEncodeStr}`);
+}
+
+const isV8 = Base128._impl === "v8";
+const currentBindingName = isV8 ? "v8.node" : "napi.node";
+
+if (!isV8 && Base128._impl !== "napi") {
+    throw new Error(`Expected napi.node implementation when V8 acceleration is not active, got: ${Base128._impl}`);
+}
+
+const extraBase128 = isV8 ? napiBase128 : null;
+if (extraBase128 && extraBase128._impl !== "napi") {
+    throw new Error(`Expected extra binding to be napi.node, got: ${extraBase128._impl}`);
+}
+
 // Enable fetch to support file:// URLs in Node.js test environment
 if (typeof process !== "undefined" && process.versions && process.versions.node) {
     const originalFetch = globalThis.fetch;
@@ -26,10 +71,6 @@ try {
         throw e;
     }
 }
-import { decode as miniDecode } from "../src/mini-decode.mjs";
-import fs from "node:fs";
-import path from "node:path";
-import { createRequire } from "node:module";
 
 const enableOutput = false
 
@@ -42,62 +83,6 @@ if (enableOutput && !fs.existsSync(outputDir))
     fs.mkdirSync(outputDir)
 
 let allSuccess = true
-
-// Verify that the imported Base128 is indeed a native implementation
-const nativeEncodeStr = String(Base128.encode);
-if (!nativeEncodeStr.includes("[native code]")) {
-    throw new Error(`Test failed: Base128.encode is not a native implementation!\nGot: ${nativeEncodeStr}`);
-}
-
-const require = createRequire(import.meta.url);
-
-// Determine which binary main.cjs imported
-const isV8 = Base128._impl === "v8";
-const currentBindingName = isV8 ? "v8.node" : "napi.node";
-
-/**
- * @returns {typeof Base128 | undefined}
- */
-function loadExtraBinding(filename) {
-    let lastError = null;
-    // 1. Try local build directory
-    const localPath = path.resolve("build", "Release", filename);
-    if (fs.existsSync(localPath)) {
-        try {
-            const mod = require(localPath);
-            if (mod && mod._impl) return mod;
-        } catch (e) {
-            lastError = e;
-        }
-    }
-    // 2. Try subpackages under npm/
-    if (fs.existsSync("npm")) {
-        const subDirs = fs.readdirSync("npm");
-        for (const dir of subDirs) {
-            const subPath = path.resolve("npm", dir, filename);
-            if (fs.existsSync(subPath)) {
-                try {
-                    const mod = require(subPath);
-                    if (mod && mod._impl) return mod;
-                } catch (e) {
-                    lastError = e;
-                }
-            }
-        }
-    }
-    const err = new Error(`Failed to load ${filename}: ${lastError ? lastError.message : "binary not found"}`);
-    if (lastError) err.cause = lastError;
-    throw err;
-}
-
-if (!isV8 && Base128._impl !== "napi") {
-    throw new Error(`Expected napi.node implementation when V8 acceleration is not active, got: ${Base128._impl}`);
-}
-
-const extraBase128 = isV8 && loadExtraBinding("napi.node");
-if (extraBase128 && extraBase128._impl !== "napi") {
-    throw new Error(`Expected extra binding to be napi.node, got: ${extraBase128._impl}`);
-}
 
 /**
  * @param {typeof Base128} base128
@@ -167,11 +152,11 @@ function test(base128, implName = 'base128') {
         .forEach(v => test2(v.name))
 }
 
-// test native addon (via main.cjs)
-console.log(`################## Base128 (${currentBindingName} via main.cjs) ##################`);
+// test native addon (via ../build/Release/)
+console.log(`################## Base128 (${currentBindingName}) ##################`);
 test(Base128, currentBindingName);
 
-// test extra native addon (napi.node when v8.node was loaded via main.cjs)
+// test extra native addon (napi.node when v8.node was primary)
 if (extraBase128) {
     console.log(`################## napi.node (additional native addon) ##################`);
     test(extraBase128, "napi.node");
