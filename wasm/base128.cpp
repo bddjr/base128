@@ -1,3 +1,5 @@
+// base128-ascii (The Unlicense)
+
 #include <stdint.h>
 #include <stddef.h>
 
