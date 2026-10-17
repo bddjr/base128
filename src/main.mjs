@@ -1,4 +1,15 @@
-loadBinding: {
+import { createRequire } from "node:module";
+
+/** @type {typeof import("./main.d.ts")} */
+export const {
+    _impl,
+    EncodeResult,
+    encode,
+    decode,
+    parseJSTemplateLiterals
+} = (() => {
+    const require = createRequire(import.meta.url);
+
     // Production environment: try loading platform-specific subpackage
     const { platform, arch } = process;
     const isMusl = () => {
@@ -13,51 +24,55 @@ loadBinding: {
         return false;
     };
 
-    let bindingPkg;
+    let bindingName;
     if (platform === "darwin") {
         if (arch === "arm64")
-            bindingPkg = "darwin-arm64";
+            bindingName = "darwin-arm64";
         else if (arch === "x64")
-            bindingPkg = "darwin-x64";
+            bindingName = "darwin-x64";
     } else if (platform === "win32") {
         if (arch === "x64")
-            bindingPkg = "win32-x64-msvc";
+            bindingName = "win32-x64-msvc";
         else if (arch === "arm64")
-            bindingPkg = "win32-arm64-msvc";
+            bindingName = "win32-arm64-msvc";
     } else if (platform === "linux") {
         if (arch === "x64") {
-            bindingPkg = isMusl()
+            bindingName = isMusl()
                 ? "linux-x64-musl"
                 : "linux-x64-gnu";
         } else if (arch === "arm64") {
-            bindingPkg = isMusl()
+            bindingName = isMusl()
                 ? "linux-arm64-musl"
                 : "linux-arm64-gnu";
         } else if (arch === "ppc64")
-            bindingPkg = "linux-ppc64-gnu";
+            bindingName = "linux-ppc64-gnu";
     } else if (platform === "android") {
         if (arch === "arm64")
-            bindingPkg = "android-arm64";
+            bindingName = "android-arm64";
     } else if (platform === "freebsd") {
         if (arch === "x64")
-            bindingPkg = "freebsd-x64";
+            bindingName = "freebsd-x64";
     } else if (platform === "openharmony") {
         if (arch === "arm64")
-            bindingPkg = "openharmony-arm64";
+            bindingName = "openharmony-arm64";
     }
 
-    if (bindingPkg) {
-        try {
-            module.exports = require(`@base128-ascii/binding-${bindingPkg}/v8.node`);
-            break loadBinding;
-        } catch (e) {
-            if (e && e.code !== 'MODULE_NOT_FOUND') try {
-                module.exports = require(`@base128-ascii/binding-${bindingPkg}/napi.node`);
-                break loadBinding;
-            } catch (e) { }
-        }
+    if (bindingName) try {
+        return require(`@base128-ascii/binding-${bindingName}/v8.node`);
+    } catch (e) {
+        if (e && e.code !== 'MODULE_NOT_FOUND') try {
+            return require(`@base128-ascii/binding-${bindingName}/napi.node`);
+        } catch (e) { }
     }
 
     // Fallback: pure JS implementation
-    module.exports = require("./pure.mjs");
-}
+    return require("./pure.mjs");
+})();
+
+export default {
+    _impl,
+    EncodeResult,
+    encode,
+    decode,
+    parseJSTemplateLiterals
+};

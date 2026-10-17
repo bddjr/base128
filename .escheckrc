@@ -11,9 +11,9 @@
     {
         "ecmaVersion": "es2016",
         "checkFeatures": true,
-        "module": false,
+        "module": true,
         "files": [
-            "src/main.cjs"
+            "src/main.mjs"
         ]
     },
     {

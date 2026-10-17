@@ -89,7 +89,7 @@ export declare function parseJSTemplateLiterals(input: string | Uint8Array | Uin
  */
 export declare const _impl: 'v8' | 'napi' | 'wasm' | 'js';
 
-export declare namespace Base128 {
+declare namespace Base128 {
     export { _impl, EncodeResult, encode, decode, parseJSTemplateLiterals };
 }
 

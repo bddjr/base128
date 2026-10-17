@@ -2905,24 +2905,16 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
 
     Napi::Object defaultObj = Napi::Object::New(env);
 
-    auto set = [&](const char* name, Napi::Value val) {
-        exports.Set(name, val);
-        defaultObj.Set(name, val);
-    };
-
-    set("EncodeResult", ctor);
-    set("encode", Napi::Function::New(env, Encode, "encode"));
-    set("decode", Napi::Function::New(env, Decode, "decode"));
-    set("parseJSTemplateLiterals", Napi::Function::New(env, ParseJSTemplateLiterals, "parseJSTemplateLiterals"));
+    exports.Set("EncodeResult", ctor);
+    exports.Set("encode", Napi::Function::New(env, Encode, "encode"));
+    exports.Set("decode", Napi::Function::New(env, Decode, "decode"));
+    exports.Set("parseJSTemplateLiterals", Napi::Function::New(env, ParseJSTemplateLiterals, "parseJSTemplateLiterals"));
 
 #ifdef USE_V8_ACCELERATION
-    set("_impl", Napi::String::New(env, "v8"));
+    exports.Set("_impl", Napi::String::New(env, "v8"));
 #else
-    set("_impl", Napi::String::New(env, "napi"));
+    exports.Set("_impl", Napi::String::New(env, "napi"));
 #endif
-
-    exports.Set("Base128", defaultObj);
-    exports.Set("default", defaultObj);
 
     return exports;
 }
