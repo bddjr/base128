@@ -5,9 +5,9 @@
   "description": "Smaller than base64, only use ASCII, can run in web browser.",
   "license": "Unlicense",
   "type": "module",
-  "main": "src/main.cjs",
-  "types": "src/main.d.ts",
-  "browser": "src/browser.mjs",
+  "main": "./src/main.cjs",
+  "types": "./src/main.d.ts",
+  "browser": "./src/browser.mjs",
   "exports": {
     ".": {
       "types": "./src/main.d.ts",
@@ -20,6 +20,8 @@
       "types": "./src/main.d.ts",
       "default": "./wasm/wasm.mjs"
     },
+    "./wasm/base128.wasm": "./wasm/base128.wasm",
+    "./base128.wasm": "./wasm/base128.wasm",
     "./browser": {
       "types": "./src/main.d.ts",
       "default": "./src/browser.mjs"
