@@ -42,13 +42,11 @@ If attempting to import the native implementation fails, it will automatically f
 
 #### WebAssembly (WASM SIMD)
 
-Accelerated with WebAssembly SIMD128 and 64-bit SWAR, ideal for web browsers, Edge runtimes (Cloudflare Workers, Deno, Bun) or server environments without native C++ compilation:
-
 ```js
 import Base128 from "base128-ascii/wasm"
 ```
 
-The runtime environment needs to support top-level await.
+Suitable for environments that do not support Node-API, but support WebAssembly SIMD128 and top-level await (e.g. web browsers).
 
 If attempting to import the WebAssembly implementation fails, it will throw an error.
 
