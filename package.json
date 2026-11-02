@@ -63,7 +63,7 @@
     "base128jstl"
   ],
   "devDependencies": {
-    "@types/node": "^24.19.1",
+    "@types/node": "^24.19.2",
     "base128-ascii": "link:",
     "es-check": "^9.8.1",
     "node-addon-api": "^8.9.2",
